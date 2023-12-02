@@ -2,7 +2,6 @@ from loguru import logger
 import psycopg
 import tomli
 from typing import Dict, List, Tuple, Optional, Literal, TypedDict
-from pydantic.dataclasses import dataclass
 from pydantic import BaseModel
 from pathlib import Path
 import os
@@ -33,7 +32,7 @@ def postgres_env_password() -> Optional[str]:
               type=click.Path(exists=True))
 def main(config: str):
     config_dict = {}
-    with open(config, "rb") as f:
+    with open(Path(config), "rb") as f:
         config_dict = tomli.load(f)["database"]
     config = Config(**config_dict)
     config.password = config.password if config.password else postgres_env_password()
