@@ -1,0 +1,4 @@
+- [fire-eggs/Danbooru2021](https://github.com/fire-eggs/Danbooru2021)
+- [Danbooru Tags Explorer](https://nsk.sh/tools/danbooru-tags-explorer/)
+- [an analysis of Danbooru tags and metadata](https://nsk.sh/posts/an-analysis-of-danbooru-tags-and-metadata/)
+- [Danbooru Public (requester pays)](https://console.cloud.google.com/storage/browser/danbooru_public/data?project=danbooru1)
