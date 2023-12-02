@@ -14,9 +14,11 @@ class Config(BaseModel):
     user: str
     password: Optional[str]
 
+
 def to_kv_str(d: Dict[str, str]) -> str:
     """Convert dictionary to key-value string"""
     return " ".join(f"{k}={v}" for k, v in d.items())
+
 
 def postgres_env_password() -> Optional[str]:
     """Get password from environment variable"""
@@ -30,7 +32,7 @@ def postgres_env_password() -> Optional[str]:
               help="Path to config file",
               type=click.Path(exists=True))
 def main(config: str):
-    config_dit = {}
+    config_dict = {}
     with open(config, "rb") as f:
         config_dict = tomli.load(f)["database"]
     config = Config(**config_dict)
