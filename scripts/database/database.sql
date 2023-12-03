@@ -150,6 +150,24 @@ FROM booru.tags t
      booru.posts_tags_assoc pta ON t.id = pta.tag_id
 GROUP BY t.id;
 
+
+-- associates artists with tags
+CREATE TABLE booru.artist_tags_assoc
+(
+    artist_id INT,
+    tag_id    INT,
+    PRIMARY KEY (artist_id, tag_id),
+    FOREIGN KEY (artist_id) REFERENCES booru.artists (id),
+    FOREIGN KEY (tag_id) REFERENCES booru.tags (id)
+);
+
+INSERT INTO booru.artist_tags_assoc (artist_id, tag_id)
+SELECT a.id AS artist_id,
+       t.id AS tag_id
+FROM booru.artists a
+         JOIN
+     booru.tags t ON a.name = t.name AND t.category = 1;
+
 -- indexes to improve the performance of queries involving those columns
 CREATE INDEX idx_tags_ids ON booru.tags (id);
 CREATE INDEX idx_tags_names ON booru.tags (name, id);

@@ -1,5 +1,5 @@
 CREATE VIEW booru.artist_view AS
-SELECT t.id                                AS tag_id,
+SELECT ata.tag_id                          AS tag_id,
        a.id                                AS artist_id,
        a.name                              AS artist_name,
        a.group_name                        AS artist_group_name,
@@ -9,16 +9,16 @@ SELECT t.id                                AS tag_id,
        FILTER (WHERE al.alias IS NOT NULL) AS artist_aliases,
        array_agg(DISTINCT au.url)
        FILTER (WHERE au.url IS NOT NULL)   AS artist_urls
-FROM booru.tags t
+FROM booru.artist_tags_assoc ata
          JOIN
-     booru.artists a ON t.name = a.name AND t.category = 1
+     booru.artists a ON ata.artist_id = a.id
          LEFT JOIN
      booru.artists_aliases al ON a.id = al.artist_id
          LEFT JOIN
      booru.artists_urls au ON a.id = au.artist_id
          LEFT JOIN
-     booru.tag_post_counts pc ON t.id = pc.tag_id
-GROUP BY t.id, a.id, pc.post_count;
+     booru.tag_post_counts pc ON ata.tag_id = pc.tag_id
+GROUP BY ata.tag_id, a.id, pc.post_count;
 
 CREATE VIEW booru.posts_tag_view AS
 SELECT p.id,
@@ -42,4 +42,3 @@ FROM booru.posts p
          JOIN
      booru.tags t ON pta.tag_id = t.id
 GROUP BY p.id, p.created_at, p.score, p.rating, p.fav_count;
-
