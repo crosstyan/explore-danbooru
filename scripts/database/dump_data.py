@@ -127,13 +127,13 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
     """
     if not posts:
         return
-    entries = [PostEntry.from_raw(post) for post in posts]
+    entries = [PostEntry.from_raw(post).model_dump() for post in posts]
     media_variants = [PostMediaVariantEntry.from_raw(post) for post in posts]
-    flatten_variants = concat(media_variants)
-    file_entries = [PostFileEntry.from_raw(post) for post in posts]
+    flatten_variants = list(map(lambda x: x.model_dump(), concat(media_variants)))
+    file_entries = [PostFileEntry.from_raw(post).model_dump() for post in posts]
 
     ids_tags: list[tuple[int, str]] = []
-    lookup_table: dict[str, int] = {}
+    lookup_table: Optional[dict[str, int]] = None
 
     if assoc_tags:
         # [(id, [tag, ...]), ...]
@@ -174,17 +174,17 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
             c.executemany(sql, values)
             conn.commit()
 
-    def batch_assoc_tags():
+    def batch_assoc_tags(table: dict[str, int]):
         with conn.cursor() as c:
             c.executemany("INSERT INTO booru.posts_tags_assoc (post_id, tag_id) VALUES (%s, %s)",
-                          [(post_id, lookup_table[tag]) for post_id, tag in ids_tags])
+                          [(post_id, table[tag]) for post_id, tag in ids_tags])
             conn.commit()
 
     batch_entries()
     batch_media_variants()
     batch_file_entries()
     if assoc_tags:
-        batch_assoc_tags()
+        batch_assoc_tags(lookup_table)
 
 
 def split_tags(tags: str) -> list[str]:
@@ -194,6 +194,11 @@ def split_tags(tags: str) -> list[str]:
 
 def lookup_tags(conn: Connection, tags: List[str]) -> Dict[str, int]:
     """Lookup multiple tags"""
+
+    def strip(x: str) -> str:
+        return x.strip()
+
+    tags = list(map(strip, tags))
     placeholders = ', '.join(['%s'] * len(tags))
 
     with conn.cursor() as c:
@@ -312,9 +317,8 @@ def close_connection(ctx, *args, **kwargs):
 
 
 @cli.command()
-@click.option("--no-associate-tags", "-n", is_flag=True, help="Do not associate tags with posts")
 @click.pass_context
-def posts(ctx: click.Context, no_associate_tags: bool):
+def posts(ctx: click.Context):
     """Dump posts"""
     conn: Connection = ctx.obj["conn"]
     input_dir: Path = ctx.obj["input_dir"]
@@ -324,7 +328,7 @@ def posts(ctx: click.Context, no_associate_tags: bool):
     logger.info("Dumping {} posts".format(count))
     with tqdm.tqdm(total=count, desc="posts") as pbar:
         for batched in batched_read_objs(file, config.insertion.batch_count):
-            batched_insert_posts(conn, batched, not no_associate_tags)
+            batched_insert_posts(conn, batched, True)
             pbar.update(len(batched))
 
 
@@ -344,7 +348,7 @@ def tags(ctx: click.Context):
             pbar.update(len(batched))
 
 
-@cli.command("tag-alias")
+@cli.command()
 @click.pass_context
 def tag_alias(ctx: click.Context):
     """Dump tag aliases"""
@@ -360,7 +364,7 @@ def tag_alias(ctx: click.Context):
             pbar.update(len(tag_alias))
 
 
-@cli.command("tag-implications")
+@cli.command()
 @click.pass_context
 def tag_implications(ctx: click.Context):
     """Dump tag implications"""
@@ -374,6 +378,16 @@ def tag_implications(ctx: click.Context):
         for implication in batched_read_objs(file, config.insertion.batch_count):
             batch_insert_tag_alias(conn, [TagAliasEntry.from_raw(alias) for alias in implication], True)
             pbar.update(len(implication))
+
+
+@cli.command()
+@click.pass_context
+@click.argument("tag_list", type=str, nargs=-1)
+def lookup_tag(ctx: click.Context, tag_list: list[str]):
+    """Lookup tag"""
+    conn: Connection = ctx.obj["conn"]
+    lookup_table = lookup_tags(conn, tag_list)
+    logger.info(lookup_table)
 
 
 @cli.command()

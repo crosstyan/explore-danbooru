@@ -34,7 +34,7 @@ class PostRaw(TypedDict):
     uploader_id: int
     score: int
     source: str
-    md5: str
+    md5: Optional[str]
     last_comment_bumped_at: str
     rating: str
     image_width: int
@@ -50,7 +50,7 @@ class PostRaw(TypedDict):
     tag_count_artist: int
     tag_count_character: int
     tag_count_copyright: int
-    file_size: int
+    file_size: Optional[int]
     up_score: int
     down_score: int
     is_pending: bool
@@ -80,101 +80,105 @@ class PostRaw(TypedDict):
 class PostEntry(BaseModel):
     id: int
     created_at: datetime
-    uploaded_id: int
-    score: int
-    source: str
-    md5: str
+    uploaded_id: Optional[int] = None
+    score: Optional[int] = None
+    source: Optional[str] = None
+    md5: Optional[str] = None
     last_commented_at: Optional[datetime] = None
-    rating: str
-    width: int
-    height: int
-    fav_count: int
-    file_ext: str
-    last_noted_at: Optional[datetime]
+    rating: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    fav_count: Optional[int] = None
+    file_ext: Optional[str] = None
+    last_noted_at: Optional[datetime] = None
     parent_id: Optional[int] = None
-    has_children: bool
+    has_children: bool = False
     approver_id: Optional[int] = None
-    file_size: int
-    up_score: int
-    down_score: int
-    is_pending: bool
-    is_flaged: bool
-    is_deleted: bool
-    updated_at: datetime
-    is_banned: bool
+    file_size: int = 0
+    up_score: int = 0
+    down_score: int = 0
+    is_pending: bool = False
+    is_flagged: bool = False
+    is_deleted: bool = False
+    updated_at: Optional[datetime] = None
+    is_banned: bool = False
     pixiv_id: Optional[int] = None
 
     @staticmethod
     def from_raw(raw: PostRaw) -> "PostEntry":
         from dateutil.parser import parse
+
+        def parse_datetime(date_string):
+            return parse(date_string) if date_string else None
+
         temp = {
-            'id': raw['id'],
-            'created_at': parse(raw['created_at']),
-            'uploaded_id': raw['uploader_id'],
-            'score': raw['score'],
-            'source': raw['source'],
-            'md5': raw['md5'],
-            'last_commented_at': parse(raw['last_comment_bumped_at']) if raw['last_comment_bumped_at'] else None,
-            'rating': raw['rating'],
-            'width': raw['image_width'],
-            'height': raw['image_height'],
-            'fav_count': raw['fav_count'],
-            'file_ext': raw['file_ext'],
-            'last_noted_at': parse(raw['last_noted_at']) if raw['last_noted_at'] else None,
-            'parent_id': raw['parent_id'],
-            'has_children': raw['has_children'],
-            'approver_id': raw['approver_id'],
-            'file_size': raw['file_size'],
-            'up_score': raw['up_score'],
-            'down_score': raw['down_score'],
-            'is_pending': raw['is_pending'],
-            'is_flaged': raw['is_flagged'],
-            'is_deleted': raw['is_deleted'],
-            'updated_at': parse(raw['updated_at']),
-            'is_banned': raw['is_banned'],
-            'pixiv_id': raw['pixiv_id']
+            'id': raw.get('id'),
+            'created_at': parse_datetime(raw.get('created_at')),
+            'uploaded_id': raw.get('uploader_id'),
+            'score': raw.get('score'),
+            'source': raw.get('source'),
+            'md5': raw.get('md5'),
+            'last_commented_at': parse_datetime(raw.get('last_comment_bumped_at')),
+            'rating': raw.get('rating'),
+            'width': raw.get('image_width'),
+            'height': raw.get('image_height'),
+            'fav_count': raw.get('fav_count'),
+            'file_ext': raw.get('file_ext'),
+            'last_noted_at': parse_datetime(raw.get('last_noted_at')),
+            'parent_id': raw.get('parent_id'),
+            'has_children': raw.get('has_children'),
+            'approver_id': raw.get('approver_id'),
+            'file_size': raw.get('file_size'),
+            'up_score': raw.get('up_score'),
+            'down_score': raw.get('down_score'),
+            'is_pending': raw.get('is_pending'),
+            'is_flagged': raw.get('is_flagged'),
+            'is_deleted': raw.get('is_deleted'),
+            'updated_at': parse_datetime(raw.get('updated_at')),
+            'is_banned': raw.get('is_banned'),
+            'pixiv_id': raw.get('pixiv_id')
         }
+
         entry = PostEntry.model_validate(temp)
         return entry
 
 
 class PostMediaVariantEntry(BaseModel):
     post_id: int
-    type: str
-    url: str
-    width: int
-    height: int
+    type: Optional[str]
+    url: Optional[str]
+    width: Optional[int]
+    height: Optional[int]
 
     @staticmethod
     def from_raw(raw: PostRaw) -> "list[PostMediaVariantEntry]":
-        variants = raw['media_asset']['variants']
+        # variants = raw['media_asset']['variants']
+        variants = raw.get('media_asset', {}).get('variants', [])
         entries = []
         for variant in variants:
-            temp = {
-                'post_id': raw['id'],
-                'type': variant['type'],
-                'url': variant['url'],
-                'width': variant['width'],
-                'height': variant['height']
-            }
-            entry = PostMediaVariantEntry.model_validate(temp)
+            entry = PostMediaVariantEntry(
+                post_id=raw['id'],
+                type=variant.get('type'),
+                url=variant.get('url'),
+                width=variant.get('width'),
+                height=variant.get('height')
+            )
             entries.append(entry)
         return entries
 
 
 class PostFileEntry(BaseModel):
     post_id: int
-    file_url: str
-    large_file_url: str
-    preview_file_url: str
+    file_url: Optional[str]
+    large_file_url: Optional[str]
+    preview_file_url: Optional[str]
 
     @staticmethod
     def from_raw(raw: PostRaw) -> "PostFileEntry":
-        temp = {
-            'post_id': raw['id'],
-            'file_url': raw['file_url'],
-            'large_file_url': raw['large_file_url'],
-            'preview_file_url': raw['preview_file_url']
-        }
-        entry = PostFileEntry.model_validate(temp)
+        entry = PostFileEntry(
+            post_id=raw['id'],
+            file_url=raw.get('file_url'),
+            large_file_url=raw.get('large_file_url'),
+            preview_file_url=raw.get('preview_file_url')
+        )
         return entry
