@@ -18,10 +18,10 @@ class TagEntry(BaseModel):
     name: str
     category: int
     is_deprecated: bool
+
     @staticmethod
     def from_raw(tag: TagRaw) -> "TagEntry":
         return TagEntry(id=tag["id"],
-                         name=tag["name"],
-                         category=tag["category"],
-                         is_deprecated=tag["is_deprecated"])
-
+                        name=tag["name"],
+                        category=tag["category"],
+                        is_deprecated=tag["is_deprecated"])

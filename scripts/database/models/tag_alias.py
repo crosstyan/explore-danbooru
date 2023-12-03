@@ -23,6 +23,7 @@ class TagAliasEntry(BaseModel):
     id: int
     antecedent_name: str
     consequent_name: str
+
     @staticmethod
     def from_raw(tag_alias: TagAliasRaw) -> "TagAliasEntry":
         return TagAliasEntry(id=tag_alias["id"],

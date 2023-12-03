@@ -93,7 +93,7 @@ CREATE TABLE booru.artists_aliases
 -- TODO: create a view for implications and aliases
 
 -- tags <> posts (junction table)
-CREATE TABLE booru.posts_tags
+CREATE TABLE booru.posts_tags_assoc
 (
     post_id INT,
     tag_id  INT,

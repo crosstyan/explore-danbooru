@@ -2,9 +2,10 @@ from loguru import logger
 import psycopg
 from psycopg import Connection
 import tomli
-from typing import Dict, Optional, Generator
+from typing import Dict, Optional, Generator, List
 from pydantic import BaseModel
 from pathlib import Path
+from pydantic import ValidationError
 import os
 import jsonlines
 import click
@@ -81,6 +82,31 @@ def insert_post(conn: Connection, post: PostRaw) -> None:
     conn.commit()
 
 
+def split_tags(tags: str) -> list[str]:
+    """Split tags"""
+    return tags.split(" ")
+
+
+def lookup_tags(conn: Connection, tags: List[str]) -> Dict[str, int]:
+    """Lookup multiple tags"""
+    placeholders = ', '.join(['%s'] * len(tags))
+
+    with conn.cursor() as c:
+        c.execute(f"SELECT id, name FROM booru.tags WHERE name IN ({placeholders})", tags)
+        rows = c.fetchall()
+        return {row[1]: row[0] for row in rows}
+
+
+def associate_tags(conn: Connection, post: PostRaw) -> None:
+    """Associate tags with posts"""
+    tags = split_tags(post["tag_string"])
+    tag_entries = lookup_tags(conn, tags)
+    values = [(post["id"], tag) for tag in tag_entries]
+    with conn.cursor() as c:
+        c.executemany("INSERT INTO booru.posts_tags_assoc (post_id, tag_id) VALUES (%s, %s)", values)
+        conn.commit()
+
+
 def insert_tag(conn: Connection, tag: TagEntry) -> None:
     """Insert tags into database"""
     columns = tag.keys()
@@ -88,7 +114,7 @@ def insert_tag(conn: Connection, tag: TagEntry) -> None:
     sql = f"INSERT INTO booru.tags ({','.join(columns)}) VALUES ({placeholders})"
     with conn.cursor() as c:
         c.execute(sql, list(tag.values()))
-    conn.commit()
+        conn.commit()
 
 
 def insert_tag_alias(conn: Connection, tag_alias: TagAliasEntry) -> None:
@@ -98,7 +124,7 @@ def insert_tag_alias(conn: Connection, tag_alias: TagAliasEntry) -> None:
     sql = f"INSERT INTO booru.tags_aliases ({','.join(columns)}) VALUES ({placeholders})"
     with conn.cursor() as c:
         c.execute(sql, list(tag_alias.values()))
-    conn.commit()
+        conn.commit()
 
 
 def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str]) -> None:
@@ -113,11 +139,7 @@ def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str
                 """
             INSERT INTO booru.artists_aliases (artist_id, alias) VALUES (%s, %s)
             """, (artists.id, name))
-    conn.commit()
-
-
-def insert_posts_tags(conn: Connection, post_raw: PostRaw):
-    pass
+        conn.commit()
 
 
 @click.command()
