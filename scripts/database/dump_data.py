@@ -14,10 +14,23 @@ from models.tag_alias import TagAliasEntry
 from models.artists import ArtistEntry
 
 
-class Config(BaseModel):
+class DatabaseConfig(BaseModel):
     dbname: str
     user: str
     password: Optional[str]
+
+
+class RawDataFileNameConfig(BaseModel):
+    posts: str = "posts.json"
+    tags: str = "tags.json"
+    artists: str = "artists.json"
+    tag_aliases: str = "tag_aliases.json"
+    tag_implications: str = "tag_implications.json"
+
+
+class Config(BaseModel):
+    database: DatabaseConfig
+    file_names: RawDataFileNameConfig
 
 
 def to_kv_str(d: Dict[str, str]) -> str:
@@ -96,7 +109,8 @@ def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str
     with conn.cursor() as c:
         c.execute(sql, list(artists.values()))
         for name in other_names:
-            c.execute("""
+            c.execute(
+                """
             INSERT INTO booru.artists_aliases (artist_id, alias) VALUES (%s, %s)
             """, (artists.id, name))
     conn.commit()
@@ -112,23 +126,19 @@ def insert_posts_tags(conn: Connection, post_raw: PostRaw):
               default="config.toml",
               help="Path to config file",
               type=click.Path(exists=True))
-@click.option("--posts",
-              "-p",
-              default="posts.json",
-              help="Path to posts file",
+@click.option("--input",
+              "-i",
+              default="raw",
+              help="Path to raw data directory",
               type=click.Path(exists=True))
-@click.option("--tags",
-              "-t",
-              default="tags.json",
-              help="Path to tags file",
-              type=click.Path(exists=True))
-def main(config: str, posts: str, tags: str):
+def main(config: str, input: str):
     config_dict = {}
     with open(Path(config), "rb") as f:
-        config_dict = tomli.load(f)["database"]
+        config_dict = tomli.load(f)
     config = Config(**config_dict)
     config.password = config.password if config.password else postgres_env_password()
     conn_info = to_kv_str(config.model_dump())
+    p = Path(input)
     # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
     with psycopg.connect(conninfo=conn_info) as conn:
         c = conn.cursor()

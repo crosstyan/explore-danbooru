@@ -2,3 +2,10 @@
 dbname = "danbooru"
 user = "postgres"
 password = "postgres"
+
+[file_names]
+posts = "posts.json"
+tags = "tags.json"
+artists = "artists.json"
+tag_aliases = "tag_aliases.json"
+tag_implications = "tag_implications.json"
