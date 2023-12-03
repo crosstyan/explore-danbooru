@@ -21,7 +21,7 @@ FROM booru.artist_tags_assoc ata
 GROUP BY ata.tag_id, a.id, pc.post_count;
 
 CREATE VIEW booru.posts_tag_view AS
-SELECT p.id,
+SELECT p.id                          AS post_id,
        p.created_at,
        p.score,
        p.rating,
