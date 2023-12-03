@@ -1,6 +1,7 @@
 from loguru import logger
 import psycopg
 from psycopg import Connection
+from psycopg.sql import SQL
 import tomli
 from typing import Dict, Optional, Generator, List, TypedDict, TypeVar, Iterable, Callable, Any
 from pydantic import BaseModel
@@ -84,8 +85,9 @@ def lookup_tags(conn: Connection, tags: List[str], force_remote: bool = False) -
 
     placeholders = ", ".join(["%s"] * len(tags))
 
+    sql = SQL(f"SELECT id, name FROM booru.tags WHERE name IN ({placeholders})")
     with conn.cursor() as c:
-        c.execute(f"SELECT id, name FROM booru.tags WHERE name IN ({placeholders})", tags)
+        c.execute(sql, tags)
         rows = c.fetchall()
         return {row[1]: row[0] for row in rows}
 
@@ -99,7 +101,7 @@ def read_all_tags(conn: Connection) -> None:
         __all_tags_table = {row[1]: row[0] for row in rows}
 
 
-def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
+def read_objs(path: str | Path) -> Generator[Dict[str, Any], None, None]:
     """Read objects from file"""
     with jsonlines.open(path) as reader:
         for obj in reader:
@@ -285,11 +287,11 @@ def create_group():
         ctx.ensure_object(dict)
         with open(Path(config), "rb") as f:
             config_dict = tomli.load(f)
-        config = Config(**config_dict)
-        if not config.database.password:
-            config.database.password = postgres_env_password()
-        ctx.obj["config"] = config
-        conn_info = to_kv_str(config.database.model_dump())
+        config_obj = Config(**config_dict)
+        if not config_obj.database.password:
+            config_obj.database.password = postgres_env_password()
+        ctx.obj["config"] = config_obj
+        conn_info = to_kv_str(config_obj.database.model_dump())
         # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
         logger.info("Connecting to database")
         conn = psycopg.connect(conninfo=conn_info)
