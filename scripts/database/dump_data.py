@@ -9,6 +9,7 @@ from pydantic import ValidationError
 import os
 import jsonlines
 import click
+import tqdm
 from models.posts import PostEntry, PostRaw, PostMediaVariantEntry, PostFileEntry
 from models.tags import TagEntry
 from models.tag_alias import TagAliasEntry
@@ -49,6 +50,15 @@ def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
     with jsonlines.open(path) as reader:
         for obj in reader:
             yield obj
+
+
+def get_line_count(path: str | Path) -> int:
+    """Get line count of file"""
+    counter = 0
+    with open(path, "r") as f:
+        for _ in f:
+            counter += 1
+    return counter
 
 
 def insert_post(conn: Connection, post: PostRaw) -> None:
@@ -103,12 +113,14 @@ def associate_tags(conn: Connection, post: PostRaw) -> None:
     tag_entries = lookup_tags(conn, tags)
     values = [(post["id"], tag) for tag in tag_entries]
     with conn.cursor() as c:
-        c.executemany("INSERT INTO booru.posts_tags_assoc (post_id, tag_id) VALUES (%s, %s)", values)
+        c.executemany("INSERT INTO booru.posts_tags_assoc (post_id, tag_id) VALUES (%s, %s)",
+                      values)
         conn.commit()
 
 
 def insert_tag(conn: Connection, tag: TagEntry) -> None:
     """Insert tags into database"""
+    tag = tag.model_dump()
     columns = tag.keys()
     placeholders = ",".join(["%s"] * len(columns))
     sql = f"INSERT INTO booru.tags ({','.join(columns)}) VALUES ({placeholders})"
@@ -117,28 +129,33 @@ def insert_tag(conn: Connection, tag: TagEntry) -> None:
         conn.commit()
 
 
-def insert_tag_alias(conn: Connection, tag_alias: TagAliasEntry) -> None:
+def insert_tag_alias(conn: Connection, tag_alias: TagAliasEntry, implication: bool = False) -> None:
     """Insert tag aliases into database"""
+    tag_alias = tag_alias.model_dump()
     columns = tag_alias.keys()
     placeholders = ",".join(["%s"] * len(columns))
-    sql = f"INSERT INTO booru.tags_aliases ({','.join(columns)}) VALUES ({placeholders})"
+    if not implication:
+        sql = f"INSERT INTO booru.tags_aliases ({','.join(columns)}) VALUES ({placeholders})"
+    else:
+        sql = f"INSERT INTO booru.tags_implications ({','.join(columns)}) VALUES ({placeholders})"
     with conn.cursor() as c:
         c.execute(sql, list(tag_alias.values()))
         conn.commit()
 
 
-def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str]) -> None:
+def insert_artist(conn: Connection, artist: ArtistEntry, other_names: list[str]) -> None:
     """Insert artists into database"""
-    columns = artists.keys()
+    artist = artist.model_dump()
+    columns = artist.keys()
     placeholders = ",".join(["%s"] * len(columns))
     sql = f"INSERT INTO booru.artists ({','.join(columns)}) VALUES ({placeholders})"
     with conn.cursor() as c:
-        c.execute(sql, list(artists.values()))
+        c.execute(sql, list(artist.values()))
         for name in other_names:
             c.execute(
                 """
             INSERT INTO booru.artists_aliases (artist_id, alias) VALUES (%s, %s)
-            """, (artists.id, name))
+            """, (artist["id"], name))
         conn.commit()
 
 
@@ -170,9 +187,10 @@ def cli(ctx: click.Context, config: str, input: str):
     with open(Path(config), "rb") as f:
         config_dict = tomli.load(f)
     config = Config(**config_dict)
-    config.password = config.password if config.password else postgres_env_password()
+    if not config.database.password:
+        config.database.password = postgres_env_password()
     ctx.obj["config"] = config
-    conn_info = to_kv_str(config.model_dump())
+    conn_info = to_kv_str(config.database.model_dump())
     # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
     logger.info("Connecting to database")
     conn = psycopg.connect(conninfo=conn_info)
@@ -182,71 +200,110 @@ def cli(ctx: click.Context, config: str, input: str):
 
 
 @cli.result_callback()
+@click.pass_context
 def close_connection(ctx, *args, **kwargs):
     logger.info("Closing connection")
-    ctx.obj["conn"].close()
+    conn: Connection = ctx.obj["conn"]
+    conn.close()
 
 
 @cli.command()
 @click.pass_context
 def posts(ctx: click.Context):
     """Dump posts"""
-    logger.info("Dumping posts")
     conn: Connection = ctx.obj["conn"]
     input_dir: Path = ctx.obj["input_dir"]
     config: Config = ctx.obj["config"]
-    for post in read_objs(input_dir / config.file_names.posts):
-        insert_post(conn, post)
+    file = input_dir / config.file_names.posts
+    count = get_line_count(file)
+    logger.info("Dumping {} posts".format(count))
+    with tqdm.tqdm(total=count, desc="Inserting posts") as pbar:
+        for post in read_objs(file):
+            insert_post(conn, post)
+            pbar.update()
 
 
 @cli.command()
 @click.pass_context
 def tags(ctx: click.Context):
     """Dump tags"""
-    logger.info("Dumping tags")
     conn: Connection = ctx.obj["conn"]
     input_dir: Path = ctx.obj["input_dir"]
     config: Config = ctx.obj["config"]
-    for tag in read_objs(input_dir / config.file_names.tags):
-        insert_tag(conn, TagEntry.from_raw(tag))
+    file = input_dir / config.file_names.tags
+    count = get_line_count(file)
+    logger.info("Dumping {} tags".format(count))
+    with tqdm.tqdm(total=count, desc="tags") as pbar:
+        for tag in read_objs(file):
+            insert_tag(conn, TagEntry.from_raw(tag))
+            pbar.update()
 
 
-@cli.command("tag-extra")
+@cli.command("tag-alias")
 @click.pass_context
-def tag_extra(ctx: click.Context):
+def tag_alias(ctx: click.Context):
     """Dump tag aliases"""
-    logger.info("Dumping tag aliases")
     conn: Connection = ctx.obj["conn"]
     input_dir: Path = ctx.obj["input_dir"]
     config: Config = ctx.obj["config"]
-    for tag_alias in read_objs(input_dir / config.file_names.tag_aliases):
-        insert_tag_alias(conn, TagAliasEntry.from_raw(tag_alias))
-    for tag_implication in read_objs(input_dir / config.file_names.tag_implications):
-        insert_tag_alias(conn, TagAliasEntry.from_raw(tag_implication))
+    file = input_dir / config.file_names.tag_aliases
+    count = get_line_count()
+    logger.info("Dumping {} tag aliases".format(count))
+    with tqdm.tqdm(total=count, desc="tag aliases") as pbar:
+        for tag_alias in read_objs(file):
+            insert_tag_alias(conn, TagAliasEntry.from_raw(tag_alias))
+            pbar.update()
+
+
+@cli.command("tag-implications")
+@click.pass_context
+def tag_implications(ctx: click.Context):
+    """Dump tag implications"""
+    conn: Connection = ctx.obj["conn"]
+    input_dir: Path = ctx.obj["input_dir"]
+    config: Config = ctx.obj["config"]
+    file = input_dir / config.file_names.tag_implications
+    count = get_line_count(file)
+    logger.info("Dumping {} tag implications".format(count))
+    with tqdm.tqdm(total=count, desc="tag implications") as pbar:
+        for tag_alias in read_objs(file):
+            insert_tag_alias(conn, TagAliasEntry.from_raw(tag_alias), True)
+            pbar.update()
 
 
 @cli.command()
 @click.pass_context
 def artists(ctx: click.Context):
     """Dump artists"""
-    logger.info("Dumping artists")
     conn: Connection = ctx.obj["conn"]
     input_dir: Path = ctx.obj["input_dir"]
     config: Config = ctx.obj["config"]
-    for artist in read_objs(input_dir / config.file_names.artists):
-        insert_artists(conn, ArtistEntry.from_raw(artist), artist["other_names"])
+    file = input_dir / config.file_names.artists
+    count = get_line_count(file)
+    logger.info("Dumping {} artists".format(count))
+    with tqdm.tqdm(total=count, desc="artists") as pbar:
+        for artist in read_objs(file):
+            try:
+                insert_artist(conn, ArtistEntry.from_raw(artist), artist["other_names"])
+            except ValidationError as e:
+                logger.error(e)
+            pbar.update()
 
 
 @cli.command("assoc-posts-tags")
 @click.pass_context
 def assoc_posts_tags(ctx: click.Context):
     """Associate posts with tags"""
-    logger.info("Associating posts with tags")
     conn: Connection = ctx.obj["conn"]
     input_dir: Path = ctx.obj["input_dir"]
     config: Config = ctx.obj["config"]
-    for post in read_objs(input_dir / config.file_names.posts):
-        associate_tags(conn, post)
+    file = input_dir / config.file_names.posts
+    count = get_line_count(file)
+    logger.info("Associating {} posts with tags".format(count))
+    with tqdm.tqdm(total=count, desc="Associating posts with tags") as pbar:
+        for post in read_objs(file):
+            associate_tags(conn, post)
+            pbar.update()
 
 
 if __name__ == "__main__":
