@@ -39,6 +39,7 @@ class RawDataFileNameConfig(BaseModel):
     posts: str = "posts.json"
     tags: str = "tags.json"
     artists: str = "artists.json"
+    artist_urls: str = "artist_urls.json"
     tag_aliases: str = "tag_aliases.json"
     tag_implications: str = "tag_implications.json"
 
@@ -80,7 +81,7 @@ def lookup_tags(conn: Connection, tags: List[str], force_remote: bool = False) -
     """Lookup multiple tags"""
     if not force_remote and __all_tags_table is not None:
         return {
-            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table  # type: ignore
+            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table    # type: ignore
         }
 
     placeholders = ", ".join(["%s"] * len(tags))
@@ -276,6 +277,7 @@ class Context(TypedDict):
 
 
 def create_group():
+
     @click.group()
     @click.option("--config",
                   "-c",
@@ -369,7 +371,7 @@ def create_group():
     @click.pass_context
     def artists(ctx: click.Context):
         """Dump artists"""
-        process_data(ctx.obj, "artists", batched_insert_artists, ArtistEntry.from_raw)
+        process_data(ctx.obj, "artists", batched_insert_artists)
 
     @cli.command()
     @click.pass_context
