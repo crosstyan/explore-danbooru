@@ -120,6 +120,13 @@ def concat(xs: Iterable[Iterable[T]]) -> Iterable[T]:
     return toolz.concat(xs)
 
 
+def get_id_tag_pairs(posts: Iterable[PostRaw]) -> Generator[tuple[int, str], None, None]:
+    for post in posts:
+        tags = split_tags(post["tag_string"])
+        id_tags = ((post["id"], tag) for tag in tags)
+        yield from id_tags
+
+
 def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: bool = True) -> None:
     """
     Insert posts into database in batch.
@@ -151,7 +158,7 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
         # not sure if this is the bottleneck
         # the ideal way is using a cache instead of building a lookup table
         # every time.
-        ids_tags = list(concat(map(tags_with_id, id_tags_lst)))
+        ids_tags = list(get_id_tag_pairs(posts))
         only_tags = list(map(lambda x: x[1], ids_tags))
         lookup_table = lookup_tags(conn, only_tags)
 
@@ -285,6 +292,7 @@ class Context(TypedDict):
 
 
 def create_group():
+
     @click.group()
     @click.option("--config",
                   "-c",
