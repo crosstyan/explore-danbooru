@@ -11,13 +11,14 @@ import jsonlines
 import click
 import tqdm
 import toolz
-import json
 from models.posts import PostEntry, PostRaw, PostMediaVariantEntry, PostFileEntry
 from models.tags import TagEntry
 from models.tag_alias import TagAliasEntry
 from models.artists import ArtistEntry
 
 T = TypeVar("T")
+
+__all_tags_table: Optional[dict[str, int]] = None
 
 
 class DatabaseConfig(BaseModel):
@@ -54,6 +55,47 @@ def postgres_env_password() -> Optional[str]:
     return os.environ.get("PGPASSWORD")
 
 
+def concat(xs: Iterable[Iterable[T]]) -> Iterable[T]:
+    """Concatenate lists"""
+    return toolz.concat(xs)
+
+
+def get_id_tag_pairs(posts: Iterable[PostRaw]) -> Generator[tuple[int, str], None, None]:
+    for post in posts:
+        tags = split_tags(post["tag_string"])
+        id_tags = ((post["id"], tag) for tag in tags)
+        yield from id_tags
+
+
+def split_tags(tags: str) -> Iterable[str]:
+    """Split tags"""
+    return map(lambda x: x.strip(), tags.split(" "))
+
+
+def lookup_tags(conn: Connection, tags: List[str], force_remote: bool = False) -> Dict[str, int]:
+    """Lookup multiple tags"""
+    if not force_remote and __all_tags_table is not None:
+        return {
+            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table    # type: ignore
+        }
+
+    placeholders = ", ".join(["%s"] * len(tags))
+
+    with conn.cursor() as c:
+        c.execute(f"SELECT id, name FROM booru.tags WHERE name IN ({placeholders})", tags)
+        rows = c.fetchall()
+        return {row[1]: row[0] for row in rows}
+
+
+def read_all_tags(conn: Connection) -> None:
+    """Read all tags from database"""
+    global __all_tags_table
+    with conn.cursor() as c:
+        c.execute("SELECT id, name FROM booru.tags")
+        rows = c.fetchall()
+        __all_tags_table = {row[1]: row[0] for row in rows}
+
+
 def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
     """Read objects from file"""
     with jsonlines.open(path) as reader:
@@ -84,50 +126,10 @@ def get_line_count(path: str | Path) -> int:
     return counter
 
 
-def insert_post(conn: Connection, post: PostRaw) -> None:
-    """
-    Insert posts into database
-    """
-    entry = PostEntry.from_raw(post)
-    columns = entry.keys()
-    placeholders = ",".join(["%s"] * len(columns))
-    sql = f"INSERT INTO booru.posts ({','.join(columns)}) VALUES ({placeholders})"
-
-    with conn.cursor() as c:
-        c.execute(sql, list(entry.values()))
-    conn.commit()
-
-    media_variants = PostMediaVariantEntry.from_raw(post)
-    for variant in media_variants:
-        columns = variant.keys()
-        placeholders = ",".join(["%s"] * len(columns))
-        sql = f"INSERT INTO booru.posts_media_variants ({','.join(columns)}) VALUES ({placeholders})"
-        with conn.cursor() as c:
-            c.execute(sql, list(variant.values()))
-        conn.commit()
-
-    file_entry = PostFileEntry.from_raw(post)
-    columns = file_entry.keys()
-    placeholders = ",".join(["%s"] * len(columns))
-    sql = f"INSERT INTO booru.posts_file_urls ({','.join(columns)}) VALUES ({placeholders})"
-    with conn.cursor() as c:
-        c.execute(sql, list(file_entry.values()))
-    conn.commit()
-
-
-def concat(xs: Iterable[Iterable[T]]) -> Iterable[T]:
-    """Concatenate lists"""
-    return toolz.concat(xs)
-
-
-def get_id_tag_pairs(posts: Iterable[PostRaw]) -> Generator[tuple[int, str], None, None]:
-    for post in posts:
-        tags = split_tags(post["tag_string"])
-        id_tags = ((post["id"], tag) for tag in tags)
-        yield from id_tags
-
-
-def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: bool = True) -> None:
+def batched_insert_posts(conn: Connection,
+                         posts: List[PostRaw],
+                         assoc_tags: bool = True,
+                         fetch_all_tags: bool = True) -> None:
     """
     Insert posts into database in batch.
 
@@ -136,6 +138,12 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
     """
     if not posts:
         return
+
+    if fetch_all_tags:
+        if __all_tags_table is None:
+            # I assume the tags won't change during the insertion of posts.
+            read_all_tags(conn)
+
     entries = [PostEntry.from_raw(post).model_dump() for post in posts]
     media_variants = [PostMediaVariantEntry.from_raw(post) for post in posts]
     flatten_variants = list(map(lambda x: x.model_dump(), concat(media_variants)))
@@ -145,22 +153,14 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
     lookup_table: Optional[dict[str, int]] = None
 
     if assoc_tags:
-        # [(id, [tag, ...]), ...]
-        id_tags_lst: list[tuple[int, list[str]]] = [
-            (post["id"], list(split_tags(post["tag_string"]))) for post in posts
-        ]
-
-        def tags_with_id(pair: tuple[int, list[str]]) -> Iterable[tuple[int, str]]:
-            id, tags = pair
-            return map(lambda tag: (id, tag), tags)
-
-        # [(id, tag), ...] # the listify is necessary... otherwise it would be a empty list???
-        # not sure if this is the bottleneck
         # the ideal way is using a cache instead of building a lookup table
         # every time.
         ids_tags = list(get_id_tag_pairs(posts))
         only_tags = list(map(lambda x: x[1], ids_tags))
-        lookup_table = lookup_tags(conn, only_tags)
+        if __all_tags_table is None:
+            lookup_table = lookup_tags(conn, only_tags)
+        else:
+            lookup_table = __all_tags_table
 
     def batch_entries():
         columns = entries[0].keys()
@@ -200,22 +200,6 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
     batch_file_entries()
     if assoc_tags:
         batch_assoc_tags(lookup_table, ids_tags)
-
-
-def split_tags(tags: str) -> Iterable[str]:
-    """Split tags"""
-    return map(lambda x: x.strip(), tags.split(" "))
-
-
-def lookup_tags(conn: Connection, tags: List[str]) -> Dict[str, int]:
-    """Lookup multiple tags"""
-
-    placeholders = ', '.join(['%s'] * len(tags))
-
-    with conn.cursor() as c:
-        c.execute(f"SELECT id, name FROM booru.tags WHERE name IN ({placeholders})", tags)
-        rows = c.fetchall()
-        return {row[1]: row[0] for row in rows}
 
 
 def batched_insert_tags(conn: Connection, tags: List[TagEntry]) -> None:
