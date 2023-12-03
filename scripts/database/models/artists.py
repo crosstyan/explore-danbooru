@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class ArtistsRaw(TypedDict):
+class ArtistRaw(TypedDict):
     id: int
     created_at: str
     name: str
@@ -24,7 +24,7 @@ class ArtistEntry(BaseModel):
     is_banned: bool
 
     @staticmethod
-    def from_raw(artists: ArtistsRaw) -> "ArtistEntry":
+    def from_raw(artists: ArtistRaw) -> "ArtistEntry":
         return ArtistEntry(id=artists["id"],
                            created_at=datetime.fromisoformat(artists["created_at"]),
                            name=artists["name"],

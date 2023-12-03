@@ -3,7 +3,7 @@ import psycopg
 from psycopg import Connection
 from psycopg.sql import SQL
 import tomli
-from typing import Dict, Optional, Generator, List, TypedDict, TypeVar, Iterable, Callable, Any
+from typing import Dict, Optional, Generator, List, TypedDict, TypeVar, Iterable, Callable, Any, Sequence
 from pydantic import BaseModel
 from pathlib import Path
 from pydantic import ValidationError
@@ -15,7 +15,7 @@ import toolz
 from models.posts import PostEntry, PostRaw, PostMediaVariantEntry, PostFileEntry
 from models.tags import TagEntry
 from models.tag_alias import TagAliasEntry
-from models.artists import ArtistEntry
+from models.artists import ArtistEntry, ArtistRaw
 from models.artist_urls import ArtistUrlEntry
 
 T = TypeVar("T")
@@ -80,7 +80,7 @@ def lookup_tags(conn: Connection, tags: List[str], force_remote: bool = False) -
     """Lookup multiple tags"""
     if not force_remote and __all_tags_table is not None:
         return {
-            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table    # type: ignore
+            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table  # type: ignore
         }
 
     placeholders = ", ".join(["%s"] * len(tags))
@@ -226,12 +226,20 @@ def batch_insert_tag_alias(conn: Connection,
         batched_insert_base(conn, tag_aliases, "booru.tag_aliases")
 
 
-def batched_insert_artists(conn: Connection, artists: List[ArtistEntry]) -> None:
+def other_names_pairs(artists: Sequence[ArtistRaw]) -> Generator[tuple[int, str], None, None]:
+    """Get artist other names pairs"""
+    for artist in artists:
+        names = artist["other_names"]
+        if names:
+            yield from ((artist["id"], name) for name in names)
+
+
+def batched_insert_artists(conn: Connection, artists: List[ArtistRaw]) -> None:
     """Insert artists and their aliases into database in batch"""
     if not artists:
         return
 
-    artists_dict_list = [artist.model_dump() for artist in artists]
+    artists_dict_list = [ArtistEntry.from_raw(artist).model_dump() for artist in artists]
 
     columns = artists_dict_list[0].keys()
     placeholders = ",".join(["%s"] * len(columns))
@@ -242,9 +250,8 @@ def batched_insert_artists(conn: Connection, artists: List[ArtistEntry]) -> None
         values = [list(artist.values()) for artist in artists_dict_list]
         c.executemany(sql, values)
 
-        aliases = [
-            (artist["id"], alias) for artist in artists_dict_list for alias in artist["other_names"]
-        ]
+        aliases = list(other_names_pairs(artists))
+
         if aliases:
             c.executemany(
                 "INSERT INTO booru.artists_aliases (artist_id, alias) VALUES (%s, %s)",
@@ -269,7 +276,6 @@ class Context(TypedDict):
 
 
 def create_group():
-
     @click.group()
     @click.option("--config",
                   "-c",
