@@ -8,7 +8,10 @@ from pathlib import Path
 import os
 import jsonlines
 import click
-from models.posts import PostEntry
+from models.posts import PostEntry, PostRaw, PostMediaVariantEntry, PostFileEntry
+from models.tags import TagEntry
+from models.tag_alias import TagAliasEntry
+from models.artists import ArtistEntry
 
 
 class Config(BaseModel):
@@ -34,15 +37,73 @@ def read_objs(path: str) -> Generator[Dict[str, any], None, None]:
             yield obj
 
 
-def insert_posts(conn: Connection, posts: PostEntry) -> None:
-    """Insert posts into database"""
-    columns = posts.keys()
+def insert_post(conn: Connection, post: PostRaw) -> None:
+    """
+    Insert posts into database
+    """
+    entry = PostEntry.from_raw(post)
+    columns = entry.keys()
     placeholders = ",".join(["%s"] * len(columns))
     sql = f"INSERT INTO booru.posts ({','.join(columns)}) VALUES ({placeholders})"
 
     with conn.cursor() as c:
-        c.execute(sql, list(posts.values()))
+        c.execute(sql, list(entry.values()))
     conn.commit()
+
+    meida_variants = PostMediaVariantEntry.from_raw(post)
+    for variant in meida_variants:
+        columns = variant.keys()
+        placeholders = ",".join(["%s"] * len(columns))
+        sql = f"INSERT INTO booru.posts_media_variants ({','.join(columns)}) VALUES ({placeholders})"
+        with conn.cursor() as c:
+            c.execute(sql, list(variant.values()))
+        conn.commit()
+
+    file_entry = PostFileEntry.from_raw(post)
+    columns = file_entry.keys()
+    placeholders = ",".join(["%s"] * len(columns))
+    sql = f"INSERT INTO booru.posts_file_urls ({','.join(columns)}) VALUES ({placeholders})"
+    with conn.cursor() as c:
+        c.execute(sql, list(file_entry.values()))
+    conn.commit()
+
+
+def insert_tag(conn: Connection, tag: TagEntry) -> None:
+    """Insert tags into database"""
+    columns = tag.keys()
+    placeholders = ",".join(["%s"] * len(columns))
+    sql = f"INSERT INTO booru.tags ({','.join(columns)}) VALUES ({placeholders})"
+    with conn.cursor() as c:
+        c.execute(sql, list(tag.values()))
+    conn.commit()
+
+
+def insert_tag_alias(conn: Connection, tag_alias: TagAliasEntry) -> None:
+    """Insert tag aliases into database"""
+    columns = tag_alias.keys()
+    placeholders = ",".join(["%s"] * len(columns))
+    sql = f"INSERT INTO booru.tags_aliases ({','.join(columns)}) VALUES ({placeholders})"
+    with conn.cursor() as c:
+        c.execute(sql, list(tag_alias.values()))
+    conn.commit()
+
+
+def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str]) -> None:
+    """Insert artists into database"""
+    columns = artists.keys()
+    placeholders = ",".join(["%s"] * len(columns))
+    sql = f"INSERT INTO booru.artists ({','.join(columns)}) VALUES ({placeholders})"
+    with conn.cursor() as c:
+        c.execute(sql, list(artists.values()))
+        for name in other_names:
+            c.execute("""
+            INSERT INTO booru.artists_aliases (artist_id, alias) VALUES (%s, %s)
+            """, (artists.id, name))
+    conn.commit()
+
+
+def insert_posts_tags(conn: Connection, post_raw: PostRaw):
+    pass
 
 
 @click.command()

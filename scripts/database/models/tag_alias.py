@@ -1,6 +1,9 @@
 from typing import Optional, TypedDict
+from pydantic import BaseModel
 
-class TagAlias(TypedDict):
+
+# Tag implication shares the same structure as tag alias
+class TagAliasRaw(TypedDict):
     id: int
     antecedent_name: str
     reason: str
@@ -16,5 +19,12 @@ class TagAlias(TypedDict):
     forum_post_id: Optional[int]
 
 
-# Tag implication shares the same structure as tag alias
-TagImplication = TagAlias
+class TagAliasEntry(BaseModel):
+    id: int
+    antecedent_name: str
+    consequent_name: str
+    @staticmethod
+    def from_raw(tag_alias: TagAliasRaw) -> "TagAliasEntry":
+        return TagAliasEntry(id=tag_alias["id"],
+                             antecedent_name=tag_alias["antecedent_name"],
+                             consequent_name=tag_alias["consequent_name"])

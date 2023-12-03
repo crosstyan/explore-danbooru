@@ -14,14 +14,14 @@ class TagRaw(TypedDict):
 
 
 class TagEntry(BaseModel):
-    tag_id: int
+    id: int
     name: str
     category: int
     is_deprecated: bool
+    @staticmethod
+    def from_raw(tag: TagRaw) -> "TagEntry":
+        return TagEntry(id=tag["id"],
+                         name=tag["name"],
+                         category=tag["category"],
+                         is_deprecated=tag["is_deprecated"])
 
-
-def tag_raw_to_entry(tag: TagRaw) -> TagEntry:
-    return TagEntry(tag_id=tag["id"],
-                    name=tag["name"],
-                    category=tag["category"],
-                    is_deprecated=tag["is_deprecated"])

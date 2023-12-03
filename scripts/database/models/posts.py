@@ -78,7 +78,7 @@ class PostRaw(TypedDict):
 
 
 class PostEntry(BaseModel):
-    post_id: int
+    id: int
     created_at: datetime
     uploaded_id: int
     score: int
@@ -104,35 +104,77 @@ class PostEntry(BaseModel):
     is_banned: bool
     pixiv_id: Optional[int] = None
 
+    @staticmethod
+    def from_raw(raw: PostRaw) -> "PostEntry":
+        from dateutil.parser import parse
+        temp = {
+            'id': raw['id'],
+            'created_at': parse(raw['created_at']),
+            'uploaded_id': raw['uploader_id'],
+            'score': raw['score'],
+            'source': raw['source'],
+            'md5': raw['md5'],
+            'last_commented_at': parse(raw['last_comment_bumped_at']) if raw['last_comment_bumped_at'] else None,
+            'rating': raw['rating'],
+            'width': raw['image_width'],
+            'height': raw['image_height'],
+            'fav_count': raw['fav_count'],
+            'file_ext': raw['file_ext'],
+            'last_noted_at': parse(raw['last_noted_at']) if raw['last_noted_at'] else None,
+            'parent_id': raw['parent_id'],
+            'has_children': raw['has_children'],
+            'approver_id': raw['approver_id'],
+            'file_size': raw['file_size'],
+            'up_score': raw['up_score'],
+            'down_score': raw['down_score'],
+            'is_pending': raw['is_pending'],
+            'is_flaged': raw['is_flagged'],
+            'is_deleted': raw['is_deleted'],
+            'updated_at': parse(raw['updated_at']),
+            'is_banned': raw['is_banned'],
+            'pixiv_id': raw['pixiv_id']
+        }
+        entry = PostEntry.model_validate(temp)
+        return entry
 
-def post_raw_to_entry(raw: PostRaw) -> PostEntry:
-    from dateutil.parser import parse
-    temp = {
-        'post_id': raw['id'],
-        'created_at': parse(raw['created_at']),
-        'uploaded_id': raw['uploader_id'],
-        'score': raw['score'],
-        'source': raw['source'],
-        'md5': raw['md5'],
-        'last_commented_at': parse(raw['last_comment_bumped_at']) if raw['last_comment_bumped_at'] else None,
-        'rating': raw['rating'],
-        'width': raw['image_width'],
-        'height': raw['image_height'],
-        'fav_count': raw['fav_count'],
-        'file_ext': raw['file_ext'],
-        'last_noted_at': parse(raw['last_noted_at']) if raw['last_noted_at'] else None,
-        'parent_id': raw['parent_id'],
-        'has_children': raw['has_children'],
-        'approver_id': raw['approver_id'],
-        'file_size': raw['file_size'],
-        'up_score': raw['up_score'],
-        'down_score': raw['down_score'],
-        'is_pending': raw['is_pending'],
-        'is_flaged': raw['is_flagged'],
-        'is_deleted': raw['is_deleted'],
-        'updated_at': parse(raw['updated_at']),
-        'is_banned': raw['is_banned'],
-        'pixiv_id': raw['pixiv_id']
-    }
-    entry = PostEntry.model_validate(temp)
-    return entry
+
+class PostMediaVariantEntry(BaseModel):
+    post_id: int
+    type: str
+    url: str
+    width: int
+    height: int
+
+    @staticmethod
+    def from_raw(raw: PostRaw) -> "list[PostMediaVariantEntry]":
+        variants = raw['media_asset']['variants']
+        entries = []
+        for variant in variants:
+            temp = {
+                'post_id': raw['id'],
+                'type': variant['type'],
+                'url': variant['url'],
+                'width': variant['width'],
+                'height': variant['height']
+            }
+            entry = PostMediaVariantEntry.model_validate(temp)
+            entries.append(entry)
+        return entries
+
+
+class PostFileEntry(BaseModel):
+    post_id: int
+    file_url: str
+    large_file_url: str
+    preview_file_url: str
+
+    @staticmethod
+    def from_raw(raw: PostRaw) -> "PostFileEntry":
+        temp = {
+            'post_id': raw['id'],
+            'file_url': raw['file_url'],
+            'large_file_url': raw['large_file_url'],
+            'preview_file_url': raw['preview_file_url']
+        }
+        entry = PostFileEntry.model_validate(temp)
+        return entry
