@@ -61,7 +61,8 @@ def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
             yield obj
 
 
-def batched_read_objs(path: str | Path, batch_size: int = 1000) -> Generator[List[Dict[str, any]], None, None]:
+def batched_read_objs(path: str | Path,
+                      batch_size: int = 1000) -> Generator[List[Dict[str, any]], None, None]:
     """Read objects from file"""
     with jsonlines.open(path) as reader:
         acc: List[Dict[str, any]] = []
@@ -138,7 +139,9 @@ def batched_insert_posts(conn: Connection, posts: List[PostRaw], assoc_tags: boo
 
     if assoc_tags:
         # [(id, [tag, ...]), ...]
-        id_tags_lst: list[tuple[int, list[str]]] = [(post["id"], split_tags(post["tag_string"])) for post in posts]
+        id_tags_lst: list[tuple[int, list[str]]] = [
+            (post["id"], split_tags(post["tag_string"])) for post in posts
+        ]
 
         def tags_with_id(pair: tuple[int, list[str]]) -> list[tuple[int, str]]:
             return [(pair[0], tag.strip()) for tag in pair[1]]
@@ -225,7 +228,9 @@ def batched_insert_tags(conn: Connection, tags: List[TagEntry]) -> None:
         conn.commit()
 
 
-def batch_insert_tag_alias(conn: Connection, tag_aliases: List[TagAliasEntry], implication: bool = False) -> None:
+def batch_insert_tag_alias(conn: Connection,
+                           tag_aliases: List[TagAliasEntry],
+                           implication: bool = False) -> None:
     """Insert tag aliases into database"""
     if not tag_aliases:
         return
@@ -374,7 +379,8 @@ def tag_implications(ctx: click.Context):
     logger.info("Dumping {} tag implications".format(count))
     with tqdm.tqdm(total=count, desc="tag implications") as pbar:
         for implication in batched_read_objs(file, config.insertion.batch_count):
-            batch_insert_tag_alias(conn, [TagAliasEntry.from_raw(alias) for alias in implication], True)
+            batch_insert_tag_alias(conn, [TagAliasEntry.from_raw(alias) for alias in implication],
+                                   True)
             pbar.update(len(implication))
 
 
@@ -385,123 +391,6 @@ def lookup_tag(ctx: click.Context, tag_list: list[str]):
     """Lookup tag"""
     conn: Connection = ctx.obj["conn"]
     lookup_table = lookup_tags(conn, tag_list)
-    logger.info(lookup_table)
-
-
-@cli.command()
-@click.pass_context
-def debug(ctx: click.Context):
-    conn: Connection = ctx.obj["conn"]
-    payload = """
-{
-  "id": 1,
-  "created_at": "2005-05-23T23:35:31.000-04:00",
-  "uploader_id": 1,
-  "score": 614,
-  "source": "http://www.biwa.ne.jp/~kyogoku/nekotama.jpg",
-  "md5": "d34e4cf0a437a5d65f8e82b7bcd02606",
-  "last_comment_bumped_at": "2023-09-21T14:44:48.597-04:00",
-  "rating": "s",
-  "image_width": 459,
-  "image_height": 650,
-  "tag_string": "1girl 2000s_(style) ;p animal_ear_fluff animal_ears aqua_panties bad_id bad_link blue_bow blue_panties blue_ribbon blush border bow bow_panties breasts brown_eyes cat_ears cat_girl cat_tail collarbone colored_stripes commentary cowboy_shot hands_up kemonomimi_mode kousaka_tamaki kyogoku_shin large_breasts long_hair long_sleeves looking_at_viewer no_pants one_eye_closed orange_background outside_border panties parted_bangs pink_shirt red_hair red_sailor_collar ribbon sailor_collar school_uniform serafuku shirt sidelocks simple_background smile solo standing striped striped_background striped_panties tail thigh_gap thighhighs thighs to_heart_(series) to_heart_2 tongue tongue_out translated two_side_up underwear very_long_hair w_arms white_border white_thighhighs",
-  "fav_count": 1012,
-  "file_ext": "jpg",
-  "last_noted_at": null,
-  "parent_id": 57501,
-  "has_children": false,
-  "approver_id": null,
-  "tag_count_general": 61,
-  "tag_count_artist": 1,
-  "tag_count_character": 1,
-  "tag_count_copyright": 2,
-  "file_size": 127238,
-  "up_score": 600,
-  "down_score": -2,
-  "is_pending": false,
-  "is_flagged": false,
-  "is_deleted": false,
-  "tag_count": 69,
-  "updated_at": "2023-11-16T13:12:39.842-05:00",
-  "is_banned": false,
-  "pixiv_id": null,
-  "last_commented_at": "2023-11-19T15:07:06.280-05:00",
-  "has_active_children": false,
-  "bit_flags": 0,
-  "tag_count_meta": 4,
-  "has_large": false,
-  "has_visible_children": false,
-  "media_asset": {
-    "id": 1,
-    "created_at": "2005-05-23T23:35:31.000-04:00",
-    "updated_at": "2023-02-23T03:15:45.265-05:00",
-    "md5": "d34e4cf0a437a5d65f8e82b7bcd02606",
-    "file_ext": "jpg",
-    "file_size": 127238,
-    "image_width": 459,
-    "image_height": 650,
-    "duration": null,
-    "status": "active",
-    "file_key": "wUufKEivb",
-    "is_public": true,
-    "pixel_hash": "9c877dd5674d7fa251ce2de0c956fd36",
-    "variants": [
-      {
-        "type": "180x180",
-        "url": "https://cdn.donmai.us/180x180/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.jpg",
-        "width": 127,
-        "height": 180,
-        "file_ext": "jpg"
-      },
-      {
-        "type": "360x360",
-        "url": "https://cdn.donmai.us/360x360/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.jpg",
-        "width": 254,
-        "height": 360,
-        "file_ext": "jpg"
-      },
-      {
-        "type": "720x720",
-        "url": "https://cdn.donmai.us/720x720/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.webp",
-        "width": 459,
-        "height": 650,
-        "file_ext": "webp"
-      },
-      {
-        "type": "original",
-        "url": "https://cdn.donmai.us/original/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.jpg",
-        "width": 459,
-        "height": 650,
-        "file_ext": "jpg"
-      }
-    ]
-  },
-  "tag_string_general": "1girl 2000s_(style) ;p animal_ear_fluff animal_ears aqua_panties blue_bow blue_panties blue_ribbon blush border bow bow_panties breasts brown_eyes cat_ears cat_girl cat_tail collarbone colored_stripes cowboy_shot hands_up kemonomimi_mode large_breasts long_hair long_sleeves looking_at_viewer no_pants one_eye_closed orange_background outside_border panties parted_bangs pink_shirt red_hair red_sailor_collar ribbon sailor_collar school_uniform serafuku shirt sidelocks simple_background smile solo standing striped striped_background striped_panties tail thigh_gap thighhighs thighs tongue tongue_out two_side_up underwear very_long_hair w_arms white_border white_thighhighs",
-  "tag_string_character": "kousaka_tamaki",
-  "tag_string_copyright": "to_heart_(series) to_heart_2",
-  "tag_string_artist": "kyogoku_shin",
-  "tag_string_meta": "bad_id bad_link commentary translated",
-  "file_url": "https://cdn.donmai.us/original/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.jpg",
-  "large_file_url": "https://cdn.donmai.us/original/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.jpg",
-  "preview_file_url": "https://cdn.donmai.us/180x180/d3/4e/d34e4cf0a437a5d65f8e82b7bcd02606.jpg"
-}
-    """
-    one_post = json.loads(payload)
-
-    # [(id, [tag, ...]), ...]
-    id_tags_lst: list[tuple[int, list[str]]] = [(post["id"], split_tags(post["tag_string"])) for post in [one_post]]
-
-    def tags_with_id(pair: tuple[int, list[str]]) -> list[tuple[int, str]]:
-        return [(pair[0], tag) for tag in pair[1]]
-
-    # [(id, tag), ...]
-    ids_tags = concat([tags_with_id(pair) for pair in id_tags_lst])
-    unique_tags = list(set([tag for _, tag in ids_tags]))
-    lookup_table = lookup_tags(conn, unique_tags)
-
-    logger.info(id_tags_lst)
-    # logger.info(ids_tags)
-    logger.info(unique_tags)
     logger.info(lookup_table)
 
 
