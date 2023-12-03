@@ -133,51 +133,26 @@ CREATE TABLE booru.posts_tags_assoc
     PRIMARY KEY (post_id, tag_id)
 );
 
-CREATE VIEW booru.artist_tag_details AS
-SELECT t.id                                AS tag_id,
-       a.id                                AS artist_id,
-       a.name                              AS artist_name,
-       a.group_name                        AS artist_group_name,
-       t.is_deprecated                     AS tag_is_deprecated,
-       a.is_banned                         AS artist_is_banned,
-       a.is_deleted                        AS artist_is_deleted,
-       array_agg(DISTINCT al.alias)
-       FILTER (WHERE al.alias IS NOT NULL) AS artist_aliases,
-       array_agg(DISTINCT au.url)
-       FILTER (WHERE au.url IS NOT NULL)   AS artist_urls
-FROM booru.tags t
-         JOIN
-     booru.artists a ON t.name = a.name AND t.category = 1
-         LEFT JOIN
-     booru.artists_aliases al ON a.id = al.artist_id
-         LEFT JOIN
-     booru.artists_urls au ON a.id = au.artist_id
-GROUP BY t.id, a.id;
+CREATE TABLE booru.tag_post_counts
+(
+    tag_id     INT PRIMARY KEY,
+    post_count INT NOT NULL,
+    FOREIGN KEY (tag_id) REFERENCES booru.tags (id)
+);
 
-CREATE VIEW booru.posts_tag_view AS
-SELECT p.id,
-       p.created_at,
-       p.score,
-       p.rating,
-       array_agg(DISTINCT t.name)
-       FILTER (WHERE t.category = 0) AS general,
-       array_agg(DISTINCT t.name)
-       FILTER (WHERE t.category = 1) AS artist,
-       array_agg(DISTINCT t.name)
-       FILTER (WHERE t.category = 3) AS copyright,
-       array_agg(DISTINCT t.name)
-       FILTER (WHERE t.category = 4) AS character,
-       array_agg(DISTINCT t.name)
-       FILTER (WHERE t.category = 5) AS meta
-FROM booru.posts p
-         JOIN
-     booru.posts_tags_assoc pta ON p.id = pta.post_id
-         JOIN
-     booru.tags t ON pta.tag_id = t.id
-GROUP BY p.id, p.created_at, p.score, p.rating;
+-- I choose to deliberately construct the post counts table instead of using the existing
+-- value in the raw dataset
+INSERT INTO booru.tag_post_counts (tag_id, post_count)
+SELECT t.id,
+       COUNT(pta.post_id)
+FROM booru.tags t
+         LEFT JOIN
+     booru.posts_tags_assoc pta ON t.id = pta.tag_id
+GROUP BY t.id;
 
 -- indexes to improve the performance of queries involving those columns
 CREATE INDEX idx_tags_ids ON booru.tags (id);
 CREATE INDEX idx_tags_names ON booru.tags (name, id);
 CREATE INDEX idx_posts_ids ON booru.posts (id);
 CREATE INDEX idx_posts_tags ON booru.posts_tags_assoc (post_id, tag_id);
+CREATE INDEX idx_artists_name ON booru.artists (name);
