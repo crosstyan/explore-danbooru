@@ -2,7 +2,7 @@ from loguru import logger
 import psycopg
 from psycopg import Connection
 import tomli
-from typing import Dict, Optional, Generator, List, TypedDict, TypeVar, Iterable
+from typing import Dict, Optional, Generator, List, TypedDict, TypeVar, Iterable, Callable, Any
 from pydantic import BaseModel
 from pathlib import Path
 from pydantic import ValidationError
@@ -18,6 +18,8 @@ from models.artists import ArtistEntry
 from models.artist_urls import ArtistUrlEntry
 
 T = TypeVar("T")
+U = TypeVar("U")
+V = TypeVar("V")
 
 __all_tags_table: Optional[dict[str, int]] = None
 
@@ -105,7 +107,7 @@ def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
 
 
 def batched_read_objs(path: str | Path,
-                      batch_size: int = 1000) -> Generator[List[Dict[str, any]], None, None]:
+                      batch_size: int = 1000) -> Generator[List[Dict[str, Any]], None, None]:
     """Read objects from file"""
     with jsonlines.open(path) as reader:
         acc: List[Dict[str, any]] = []
@@ -325,75 +327,6 @@ def create_group():
         p = Path(input)
         ctx.obj["input_dir"] = p
 
-    @cli.result_callback()
-    @click.pass_context
-    def close_connection(ctx, *args, **kwargs):
-        logger.info("Closing connection")
-        conn: Connection = ctx.obj["conn"]
-        conn.close()
-
-    @cli.command()
-    @click.pass_context
-    def posts(ctx: click.Context):
-        """Dump posts"""
-        conn: Connection = ctx.obj["conn"]
-        input_dir: Path = ctx.obj["input_dir"]
-        config: Config = ctx.obj["config"]
-        file = input_dir / config.file_names.posts
-        count = get_line_count(file)
-        logger.info("Dumping {} posts".format(count))
-        with tqdm.tqdm(total=count, desc="posts") as pbar:
-            for batched in batched_read_objs(file, config.insertion.batch_count):
-                batched_insert_posts(conn, batched, True)
-                pbar.update(len(batched))
-
-    @cli.command()
-    @click.pass_context
-    def tags(ctx: click.Context):
-        """Dump tags"""
-        conn: Connection = ctx.obj["conn"]
-        input_dir: Path = ctx.obj["input_dir"]
-        config: Config = ctx.obj["config"]
-        file = input_dir / config.file_names.tags
-        count = get_line_count(file)
-        logger.info("Dumping {} tags".format(count))
-        with tqdm.tqdm(total=count, desc="tags") as pbar:
-            for batched in batched_read_objs(file, config.insertion.batch_count):
-                batched_insert_tags(conn, [TagEntry.from_raw(tag) for tag in batched])
-                pbar.update(len(batched))
-
-    @cli.command()
-    @click.pass_context
-    def tag_alias(ctx: click.Context):
-        """Dump tag aliases"""
-        conn: Connection = ctx.obj["conn"]
-        input_dir: Path = ctx.obj["input_dir"]
-        config: Config = ctx.obj["config"]
-        file = input_dir / config.file_names.tag_aliases
-        count = get_line_count(file)
-        logger.info("Dumping {} tag aliases".format(count))
-        with tqdm.tqdm(total=count, desc="tag aliases") as pbar:
-            for tag_alias in batched_read_objs(file, config.insertion.batch_count):
-                batch_insert_tag_alias(conn, [TagAliasEntry.from_raw(alias) for alias in tag_alias])
-                pbar.update(len(tag_alias))
-
-    @cli.command()
-    @click.pass_context
-    def tag_implications(ctx: click.Context):
-        """Dump tag implications"""
-        conn: Connection = ctx.obj["conn"]
-        input_dir: Path = ctx.obj["input_dir"]
-        config: Config = ctx.obj["config"]
-        file = input_dir / config.file_names.tag_implications
-        count = get_line_count(file)
-        logger.info("Dumping {} tag implications".format(count))
-        with tqdm.tqdm(total=count, desc="tag implications") as pbar:
-            for implication in batched_read_objs(file, config.insertion.batch_count):
-                batch_insert_tag_alias(conn,
-                                       [TagAliasEntry.from_raw(alias) for alias in implication],
-                                       True)
-                pbar.update(len(implication))
-
     @cli.command()
     @click.pass_context
     @click.argument("tag_list", type=str, nargs=-1)
@@ -403,35 +336,68 @@ def create_group():
         lookup_table = lookup_tags(conn, tag_list)
         logger.info(lookup_table)
 
+    def process_data(obj: ContextObject,
+                     entry: str,
+                     insert_fn: Callable[[Connection, List[T]], None],
+                     transform_fn: Optional[Callable[[dict[str, Any]], T]] = None) -> None:
+        conn = obj["conn"]
+        input_dir = obj["input_dir"]
+        config = obj["config"]
+        file = input_dir / getattr(config.file_names, entry)
+        count = get_line_count(file)
+        logger.info("Dumping {} {}".format(count, entry))
+        with tqdm.tqdm(total=count, desc=entry) as pbar:
+            for batched in batched_read_objs(file, config.insertion.batch_count):
+                if transform_fn is None:
+                    insert_fn(conn, batched)
+                else:
+                    insert_fn(conn, [transform_fn(item) for item in batched])
+                pbar.update(len(batched))
+
+    @cli.result_callback()
+    @click.pass_context
+    def close_connection(ctx, *_args, **_kwargs):
+        logger.info("Closing connection")
+        conn: Connection = ctx.obj["conn"]
+        conn.close()
+
+    @cli.command()
+    @click.pass_context
+    def posts(ctx: click.Context):
+        """Dump posts"""
+        process_data(ctx.obj, "posts", lambda conn, raw: batched_insert_posts(conn, raw))
+
+    @cli.command()
+    @click.pass_context
+    def tags(ctx: click.Context):
+        """Dump tags"""
+        process_data(ctx.obj, "tags", batched_insert_tags, TagEntry.from_raw)
+
+    @cli.command()
+    @click.pass_context
+    def tag_alias(ctx: click.Context):
+        """Dump tag aliases"""
+        process_data(ctx.obj, "tag_aliases", batch_insert_tag_alias, TagAliasEntry.from_raw)
+
+    @cli.command()
+    @click.pass_context
+    def tag_implications(ctx: click.Context):
+        """Dump tag implications"""
+        process_data(ctx.obj, "tag_implications",
+                     lambda conn, raw: batch_insert_tag_alias(conn, raw, implication=True),
+                     TagAliasEntry.from_raw)
+
     @cli.command()
     @click.pass_context
     def artists(ctx: click.Context):
         """Dump artists"""
-        conn: Connection = ctx.obj["conn"]
-        input_dir: Path = ctx.obj["input_dir"]
-        config: Config = ctx.obj["config"]
-        file = input_dir / config.file_names.artists
-        count = get_line_count(file)
-        logger.info("Dumping {} artists".format(count))
-        with tqdm.tqdm(total=count, desc="artists") as pbar:
-            for batched in batched_read_objs(file, config.insertion.batch_count):
-                batched_insert_artists(conn, [ArtistEntry.from_raw(artist) for artist in batched])
-                pbar.update(len(batched))
+        process_data(ctx.obj, "artists", batched_insert_artists, ArtistEntry.from_raw)
 
     @cli.command()
     @click.pass_context
     def artist_urls(ctx: click.Context):
         """Dump artist urls"""
-        conn: Connection = ctx.obj["conn"]
-        input_dir: Path = ctx.obj["input_dir"]
-        config: Config = ctx.obj["config"]
-        file = input_dir / config.file_names.artists
-        count = get_line_count(file)
-        logger.info("Dumping {} artist urls".format(count))
-        with tqdm.tqdm(total=count, desc="artist urls") as pbar:
-            for batched in batched_read_objs(file, config.insertion.batch_count):
-                batched_insert_artist_urls(conn, [ArtistUrlEntry.from_raw(artist_url) for artist_url in batched])
-                pbar.update(len(batched))
+        process_data(ctx.obj, "artist_urls", batched_insert_artist_urls, ArtistUrlEntry.from_raw)
 
     return cli
 
