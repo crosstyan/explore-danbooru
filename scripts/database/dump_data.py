@@ -18,7 +18,7 @@ from models.artists import ArtistEntry
 from models.artist_urls import ArtistUrlEntry
 
 T = TypeVar("T")
-U = TypeVar("U")
+U = TypeVar("U", bound=BaseModel)
 V = TypeVar("V")
 
 __all_tags_table: Optional[dict[str, int]] = None
@@ -79,7 +79,7 @@ def lookup_tags(conn: Connection, tags: List[str], force_remote: bool = False) -
     """Lookup multiple tags"""
     if not force_remote and __all_tags_table is not None:
         return {
-            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table  # type: ignore
+            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table    # type: ignore
         }
 
     placeholders = ", ".join(["%s"] * len(tags))
@@ -110,7 +110,7 @@ def batched_read_objs(path: str | Path,
                       batch_size: int = 1000) -> Generator[List[Dict[str, Any]], None, None]:
     """Read objects from file"""
     with jsonlines.open(path) as reader:
-        acc: List[Dict[str, any]] = []
+        acc: List[Dict[str, Any]] = []
         for obj in reader:
             if len(acc) >= batch_size:
                 yield acc
@@ -127,6 +127,26 @@ def get_line_count(path: str | Path) -> int:
         for _ in f:
             counter += 1
     return counter
+
+
+def batched_insert_base(conn: Connection, entries: List[U], table_name: str) -> None:
+    """Insert entries into database in batch"""
+    if not entries:
+        return
+
+    entries_dict_list = [entry.model_dump() for entry in entries]
+
+    columns = entries_dict_list[0].keys()
+    placeholders = ",".join(["%s"] * len(columns))
+
+    sql = f"INSERT INTO {table_name} ({','.join(columns)}) VALUES ({placeholders})"
+
+    with conn.cursor() as c:
+        # Prepare the list of values for executemany()
+        values = [list(entry.values()) for entry in entries_dict_list]
+        c.executemany(sql, values)
+
+        conn.commit()
 
 
 def batched_insert_posts(conn: Connection,
@@ -147,10 +167,10 @@ def batched_insert_posts(conn: Connection,
             # I assume the tags won't change during the insertion of posts.
             read_all_tags(conn)
 
-    entries = [PostEntry.from_raw(post).model_dump() for post in posts]
+    entries = [PostEntry.from_raw(post) for post in posts]
     media_variants = [PostMediaVariantEntry.from_raw(post) for post in posts]
-    flatten_variants = list(map(lambda x: x.model_dump(), concat(media_variants)))
-    file_entries = [PostFileEntry.from_raw(post).model_dump() for post in posts]
+    flatten_variants = list(concat(media_variants))
+    file_entries = [PostFileEntry.from_raw(post) for post in posts]
 
     ids_tags: Optional[list[tuple[int, str]]] = None
     lookup_table: Optional[dict[str, int]] = None
@@ -166,31 +186,13 @@ def batched_insert_posts(conn: Connection,
             lookup_table = __all_tags_table
 
     def batch_entries():
-        columns = entries[0].keys()
-        placeholders = ",".join(["%s"] * len(columns))
-        sql = f"INSERT INTO booru.posts ({','.join(columns)}) VALUES ({placeholders})"
-        with conn.cursor() as c:
-            values = [list(entry.values()) for entry in entries]
-            c.executemany(sql, values)
-            conn.commit()
+        batched_insert_base(conn, entries, "booru.posts")
 
     def batch_media_variants():
-        columns = flatten_variants[0].keys()
-        placeholders = ",".join(["%s"] * len(columns))
-        sql = f"INSERT INTO booru.posts_media_variants ({','.join(columns)}) VALUES ({placeholders})"
-        with conn.cursor() as c:
-            values = [list(variant.values()) for variant in flatten_variants]
-            c.executemany(sql, values)
-            conn.commit()
+        batched_insert_base(conn, flatten_variants, "booru.posts_media_variants")
 
     def batch_file_entries():
-        columns = file_entries[0].keys()
-        placeholders = ",".join(["%s"] * len(columns))
-        sql = f"INSERT INTO booru.posts_file_urls ({','.join(columns)}) VALUES ({placeholders})"
-        with conn.cursor() as c:
-            values = [list(file_entry.values()) for file_entry in file_entries]
-            c.executemany(sql, values)
-            conn.commit()
+        batched_insert_base(conn, file_entries, "booru.posts_file_urls")
 
     def batch_assoc_tags(table: dict[str, int], id_tag_pairs: Iterable[tuple[int, str]]):
         with conn.cursor() as c:
@@ -202,45 +204,24 @@ def batched_insert_posts(conn: Connection,
     batch_media_variants()
     batch_file_entries()
     if assoc_tags:
+        assert lookup_table is not None
+        assert ids_tags is not None
         batch_assoc_tags(lookup_table, ids_tags)
 
 
 def batched_insert_tags(conn: Connection, tags: List[TagEntry]) -> None:
     """Insert tags into database in batch"""
-    if not tags:
-        return
-
-    tags_dict_list = [tag.model_dump() for tag in tags]
-
-    columns = tags_dict_list[0].keys()
-    placeholders = ",".join(["%s"] * len(columns))
-
-    sql = f"INSERT INTO booru.tags ({','.join(columns)}) VALUES ({placeholders})"
-
-    with conn.cursor() as c:
-        # Prepare the list of values for executemany()
-        values = [list(tag.values()) for tag in tags_dict_list]
-        c.executemany(sql, values)
-
-        conn.commit()
+    batched_insert_base(conn, tags, "booru.tags")
 
 
 def batch_insert_tag_alias(conn: Connection,
                            tag_aliases: List[TagAliasEntry],
                            implication: bool = False) -> None:
     """Insert tag aliases into database"""
-    if not tag_aliases:
-        return
-    dict_tag_aliases = [tag_alias.model_dump() for tag_alias in tag_aliases]
-    columns = dict_tag_aliases[0].keys()
-    placeholders = ",".join(["%s"] * len(columns))
-    if not implication:
-        sql = f"INSERT INTO booru.tags_aliases ({','.join(columns)}) VALUES ({placeholders})"
+    if implication:
+        batched_insert_base(conn, tag_aliases, "booru.tag_implications")
     else:
-        sql = f"INSERT INTO booru.tags_implications ({','.join(columns)}) VALUES ({placeholders})"
-    with conn.cursor() as c:
-        c.executemany(sql, [list(alias.values()) for alias in dict_tag_aliases])
-        conn.commit()
+        batched_insert_base(conn, tag_aliases, "booru.tag_aliases")
 
 
 def batched_insert_artists(conn: Connection, artists: List[ArtistEntry]) -> None:
@@ -259,7 +240,9 @@ def batched_insert_artists(conn: Connection, artists: List[ArtistEntry]) -> None
         values = [list(artist.values()) for artist in artists_dict_list]
         c.executemany(sql, values)
 
-        aliases = [(artist["id"], alias) for artist in artists for alias in artist.other_names]
+        aliases = [
+            (artist["id"], alias) for artist in artists_dict_list for alias in artist["other_names"]
+        ]
         if aliases:
             c.executemany(
                 "INSERT INTO booru.artists_aliases (artist_id, alias) VALUES (%s, %s)",
@@ -270,21 +253,7 @@ def batched_insert_artists(conn: Connection, artists: List[ArtistEntry]) -> None
 
 def batched_insert_artist_urls(conn: Connection, artist_urls: List[ArtistUrlEntry]) -> None:
     """Insert artist urls into database in batch"""
-    if not artist_urls:
-        return
-
-    artist_urls_dict_list = [artist_url.model_dump() for artist_url in artist_urls]
-
-    columns = artist_urls_dict_list[0].keys()
-    placeholders = ",".join(["%s"] * len(columns))
-
-    sql = f"INSERT INTO booru.artists_urls ({','.join(columns)}) VALUES ({placeholders})"
-
-    with conn.cursor() as c:
-        values = [list(artist_url.values()) for artist_url in artist_urls_dict_list]
-        c.executemany(sql, values)
-
-        conn.commit()
+    batched_insert_base(conn, artist_urls, "booru.artists_urls")
 
 
 class ContextObject(TypedDict):
@@ -298,6 +267,7 @@ class Context(TypedDict):
 
 
 def create_group():
+
     @click.group()
     @click.option("--config",
                   "-c",
