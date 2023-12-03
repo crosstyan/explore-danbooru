@@ -83,6 +83,16 @@ CREATE TABLE booru.artists
     is_deleted BOOLEAN
 );
 
+CREATE TABLE booru.artists_urls
+(
+    id         INT PRIMARY KEY,
+    artist_id  INT NOT NULL,
+    url        TEXT,
+    created_at timestamptz,
+    updated_at timestamptz,
+    is_active  BOOLEAN
+);
+
 CREATE TABLE booru.artists_aliases
 (
     id        SERIAL PRIMARY KEY,
@@ -91,6 +101,7 @@ CREATE TABLE booru.artists_aliases
 );
 
 -- TODO: create a view for implications and aliases
+-- TODO: create a view for tag counts of posts
 
 -- tags <> posts (junction table)
 CREATE TABLE booru.posts_tags_assoc

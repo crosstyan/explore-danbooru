@@ -15,6 +15,7 @@ from models.posts import PostEntry, PostRaw, PostMediaVariantEntry, PostFileEntr
 from models.tags import TagEntry
 from models.tag_alias import TagAliasEntry
 from models.artists import ArtistEntry
+from models.artist_urls import ArtistUrlEntry
 
 T = TypeVar("T")
 
@@ -76,7 +77,7 @@ def lookup_tags(conn: Connection, tags: List[str], force_remote: bool = False) -
     """Lookup multiple tags"""
     if not force_remote and __all_tags_table is not None:
         return {
-            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table    # type: ignore
+            tag: __all_tags_table[tag] for tag in tags if tag in __all_tags_table  # type: ignore
         }
 
     placeholders = ", ".join(["%s"] * len(tags))
@@ -265,6 +266,25 @@ def batched_insert_artists(conn: Connection, artists: List[ArtistEntry]) -> None
         conn.commit()
 
 
+def batched_insert_artist_urls(conn: Connection, artist_urls: List[ArtistUrlEntry]) -> None:
+    """Insert artist urls into database in batch"""
+    if not artist_urls:
+        return
+
+    artist_urls_dict_list = [artist_url.model_dump() for artist_url in artist_urls]
+
+    columns = artist_urls_dict_list[0].keys()
+    placeholders = ",".join(["%s"] * len(columns))
+
+    sql = f"INSERT INTO booru.artists_urls ({','.join(columns)}) VALUES ({placeholders})"
+
+    with conn.cursor() as c:
+        values = [list(artist_url.values()) for artist_url in artist_urls_dict_list]
+        c.executemany(sql, values)
+
+        conn.commit()
+
+
 class ContextObject(TypedDict):
     config: Config
     conn: Connection
@@ -276,7 +296,6 @@ class Context(TypedDict):
 
 
 def create_group():
-
     @click.group()
     @click.option("--config",
                   "-c",
@@ -397,6 +416,21 @@ def create_group():
         with tqdm.tqdm(total=count, desc="artists") as pbar:
             for batched in batched_read_objs(file, config.insertion.batch_count):
                 batched_insert_artists(conn, [ArtistEntry.from_raw(artist) for artist in batched])
+                pbar.update(len(batched))
+
+    @cli.command()
+    @click.pass_context
+    def artist_urls(ctx: click.Context):
+        """Dump artist urls"""
+        conn: Connection = ctx.obj["conn"]
+        input_dir: Path = ctx.obj["input_dir"]
+        config: Config = ctx.obj["config"]
+        file = input_dir / config.file_names.artists
+        count = get_line_count(file)
+        logger.info("Dumping {} artist urls".format(count))
+        with tqdm.tqdm(total=count, desc="artist urls") as pbar:
+            for batched in batched_read_objs(file, config.insertion.batch_count):
+                batched_insert_artist_urls(conn, [ArtistUrlEntry.from_raw(artist_url) for artist_url in batched])
                 pbar.update(len(batched))
 
     return cli
