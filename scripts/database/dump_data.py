@@ -2,7 +2,7 @@ from loguru import logger
 import psycopg
 from psycopg import Connection
 import tomli
-from typing import Dict, Optional, Generator, List
+from typing import Dict, Optional, Generator, List, TypedDict
 from pydantic import BaseModel
 from pathlib import Path
 from pydantic import ValidationError
@@ -44,7 +44,7 @@ def postgres_env_password() -> Optional[str]:
     return os.environ.get("PGPASSWORD")
 
 
-def read_objs(path: str) -> Generator[Dict[str, any], None, None]:
+def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
     """Read objects from file"""
     with jsonlines.open(path) as reader:
         for obj in reader:
@@ -142,7 +142,17 @@ def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str
         conn.commit()
 
 
-@click.command()
+class ContextObject(TypedDict):
+    config: Config
+    conn: Connection
+    input_dir: Path
+
+
+class Context(TypedDict):
+    obj: ContextObject
+
+
+@click.group()
 @click.option("--config",
               "-c",
               default="config.toml",
@@ -153,19 +163,91 @@ def insert_artists(conn: Connection, artists: ArtistEntry, other_names: list[str
               default="raw",
               help="Path to raw data directory",
               type=click.Path(exists=True))
-def main(config: str, input: str):
+@click.pass_context
+def cli(ctx: click.Context, config: str, input: str):
     config_dict = {}
+    ctx.ensure_object(dict)
     with open(Path(config), "rb") as f:
         config_dict = tomli.load(f)
     config = Config(**config_dict)
     config.password = config.password if config.password else postgres_env_password()
+    ctx.obj["config"] = config
     conn_info = to_kv_str(config.model_dump())
-    p = Path(input)
     # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
-    with psycopg.connect(conninfo=conn_info) as conn:
-        c = conn.cursor()
-        logger.info("connected")
+    logger.info("Connecting to database")
+    conn = psycopg.connect(conninfo=conn_info)
+    ctx.obj["conn"] = conn
+    p = Path(input)
+    ctx.obj["input_dir"] = p
+
+
+@cli.result_callback()
+def close_connection(ctx, *args, **kwargs):
+    logger.info("Closing connection")
+    ctx.obj["conn"].close()
+
+
+@cli.command()
+@click.pass_context
+def posts(ctx: click.Context):
+    """Dump posts"""
+    logger.info("Dumping posts")
+    conn: Connection = ctx.obj["conn"]
+    input_dir: Path = ctx.obj["input_dir"]
+    config: Config = ctx.obj["config"]
+    for post in read_objs(input_dir / config.file_names.posts):
+        insert_post(conn, post)
+
+
+@cli.command()
+@click.pass_context
+def tags(ctx: click.Context):
+    """Dump tags"""
+    logger.info("Dumping tags")
+    conn: Connection = ctx.obj["conn"]
+    input_dir: Path = ctx.obj["input_dir"]
+    config: Config = ctx.obj["config"]
+    for tag in read_objs(input_dir / config.file_names.tags):
+        insert_tag(conn, TagEntry.from_raw(tag))
+
+
+@cli.command("tag-extra")
+@click.pass_context
+def tag_extra(ctx: click.Context):
+    """Dump tag aliases"""
+    logger.info("Dumping tag aliases")
+    conn: Connection = ctx.obj["conn"]
+    input_dir: Path = ctx.obj["input_dir"]
+    config: Config = ctx.obj["config"]
+    for tag_alias in read_objs(input_dir / config.file_names.tag_aliases):
+        insert_tag_alias(conn, TagAliasEntry.from_raw(tag_alias))
+    for tag_implication in read_objs(input_dir / config.file_names.tag_implications):
+        insert_tag_alias(conn, TagAliasEntry.from_raw(tag_implication))
+
+
+@cli.command()
+@click.pass_context
+def artists(ctx: click.Context):
+    """Dump artists"""
+    logger.info("Dumping artists")
+    conn: Connection = ctx.obj["conn"]
+    input_dir: Path = ctx.obj["input_dir"]
+    config: Config = ctx.obj["config"]
+    for artist in read_objs(input_dir / config.file_names.artists):
+        insert_artists(conn, ArtistEntry.from_raw(artist), artist["other_names"])
+
+
+@cli.command("assoc-posts-tags")
+@click.pass_context
+def assoc_posts_tags(ctx: click.Context):
+    """Associate posts with tags"""
+    logger.info("Associating posts with tags")
+    conn: Connection = ctx.obj["conn"]
+    input_dir: Path = ctx.obj["input_dir"]
+    config: Config = ctx.obj["config"]
+    for post in read_objs(input_dir / config.file_names.posts):
+        associate_tags(conn, post)
 
 
 if __name__ == "__main__":
-    main()
+    cli()

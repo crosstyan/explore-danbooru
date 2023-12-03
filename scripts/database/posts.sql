@@ -103,6 +103,6 @@ CREATE TABLE booru.posts_tags_assoc
 
 -- indexes to improve the performance of queries involving those columns
 CREATE INDEX idx_tags_ids ON booru.tags (id);
-CREATE INDEX idx_tags ON booru.tags (name, id);
-CREATE INDEX idx_posts_ids ON booru.posts (post_id);
-CREATE INDEX idx_posts_tags ON booru.posts_tags (post_id, tag_id);
+CREATE INDEX idx_tags_names ON booru.tags (name, id);
+CREATE INDEX idx_posts_ids ON booru.posts (id);
+CREATE INDEX idx_posts_tags ON booru.posts_tags_assoc (post_id, tag_id);
