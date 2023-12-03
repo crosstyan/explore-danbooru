@@ -2,7 +2,7 @@ from loguru import logger
 import psycopg
 from psycopg import Connection
 import tomli
-from typing import Dict, Optional, Generator, List, TypedDict
+from typing import Dict, Optional, Generator, List, TypedDict, TypeVar
 from pydantic import BaseModel
 from pathlib import Path
 from pydantic import ValidationError
@@ -15,11 +15,17 @@ from models.tags import TagEntry
 from models.tag_alias import TagAliasEntry
 from models.artists import ArtistEntry
 
+T = TypeVar("T")
+
 
 class DatabaseConfig(BaseModel):
     dbname: str
     user: str
     password: Optional[str]
+
+
+class InsertionConfig(BaseModel):
+    batch_count: int = 1000
 
 
 class RawDataFileNameConfig(BaseModel):
@@ -33,6 +39,7 @@ class RawDataFileNameConfig(BaseModel):
 class Config(BaseModel):
     database: DatabaseConfig
     file_names: RawDataFileNameConfig
+    insertion: InsertionConfig
 
 
 def to_kv_str(d: Dict[str, str]) -> str:
@@ -50,6 +57,19 @@ def read_objs(path: str | Path) -> Generator[Dict[str, any], None, None]:
     with jsonlines.open(path) as reader:
         for obj in reader:
             yield obj
+
+
+def batched_read_objs(path: str | Path, batch_size: int = 1000) -> Generator[List[Dict[str, any]], None, None]:
+    """Read objects from file"""
+    with jsonlines.open(path) as reader:
+        acc: List[Dict[str, any]] = []
+        for obj in reader:
+            if len(acc) >= batch_size:
+                yield acc
+                acc.clear()
+            acc.append(obj)
+        if acc:
+            yield acc
 
 
 def get_line_count(path: str | Path) -> int:
@@ -129,17 +149,19 @@ def insert_tag(conn: Connection, tag: TagEntry) -> None:
         conn.commit()
 
 
-def insert_tag_alias(conn: Connection, tag_alias: TagAliasEntry, implication: bool = False) -> None:
+def batch_insert_tag_alias(conn: Connection, tag_aliases: List[TagAliasEntry], implication: bool = False) -> None:
     """Insert tag aliases into database"""
-    tag_alias = tag_alias.model_dump()
-    columns = tag_alias.keys()
+    if not tag_aliases:
+        return
+    dict_tag_aliases = [tag_alias.model_dump() for tag_alias in tag_aliases]
+    columns = dict_tag_aliases[0].keys()
     placeholders = ",".join(["%s"] * len(columns))
     if not implication:
         sql = f"INSERT INTO booru.tags_aliases ({','.join(columns)}) VALUES ({placeholders})"
     else:
         sql = f"INSERT INTO booru.tags_implications ({','.join(columns)}) VALUES ({placeholders})"
     with conn.cursor() as c:
-        c.execute(sql, list(tag_alias.values()))
+        c.executemany(sql, [list(alias.values()) for alias in dict_tag_aliases])
         conn.commit()
 
 
@@ -247,12 +269,12 @@ def tag_alias(ctx: click.Context):
     input_dir: Path = ctx.obj["input_dir"]
     config: Config = ctx.obj["config"]
     file = input_dir / config.file_names.tag_aliases
-    count = get_line_count()
+    count = get_line_count(file)
     logger.info("Dumping {} tag aliases".format(count))
     with tqdm.tqdm(total=count, desc="tag aliases") as pbar:
-        for tag_alias in read_objs(file):
-            insert_tag_alias(conn, TagAliasEntry.from_raw(tag_alias))
-            pbar.update()
+        for tag_alias in batched_read_objs(file, config.insertion.batch_count):
+            batch_insert_tag_alias(conn, [TagAliasEntry.from_raw(alias) for alias in tag_alias])
+            pbar.update(len(tag_alias))
 
 
 @cli.command("tag-implications")
@@ -266,9 +288,9 @@ def tag_implications(ctx: click.Context):
     count = get_line_count(file)
     logger.info("Dumping {} tag implications".format(count))
     with tqdm.tqdm(total=count, desc="tag implications") as pbar:
-        for tag_alias in read_objs(file):
-            insert_tag_alias(conn, TagAliasEntry.from_raw(tag_alias), True)
-            pbar.update()
+        for implication in batched_read_objs(file, config.insertion.batch_count):
+            batch_insert_tag_alias(conn, [TagAliasEntry.from_raw(alias) for alias in implication], True)
+            pbar.update(len(implication))
 
 
 @cli.command()

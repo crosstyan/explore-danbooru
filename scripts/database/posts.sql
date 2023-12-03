@@ -61,14 +61,14 @@ CREATE TABLE booru.tags
 CREATE TABLE booru.tags_aliases
 (
     id              INT PRIMARY KEY,
-    predicate_name  TEXT NOT NULL,
+    antecedent_name TEXT NOT NULL,
     consequent_name TEXT NOT NULL
 );
 
 CREATE TABLE booru.tags_implications
 (
     id              INT PRIMARY KEY,
-    predicate_name  TEXT NOT NULL,
+    antecedent_name TEXT NOT NULL,
     consequent_name TEXT NOT NULL
 );
 

@@ -9,3 +9,7 @@ tags = "tags.json"
 artists = "artists.json"
 tag_aliases = "tag_aliases.json"
 tag_implications = "tag_implications.json"
+
+[insertion]
+batch_count = 1000
+
