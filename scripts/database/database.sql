@@ -60,6 +60,7 @@ CREATE TABLE booru.tags
 
 COMMENT ON TABLE booru.tags IS
     'https://danbooru.donmai.us/wiki_pages/api:tags';
+-- no 2
 COMMENT ON COLUMN booru.tags.category IS
     'The category of the tag. 0 = General, 1 = Artist, 3 = Copyright, 4 = Character, 5 = Meta';
 
@@ -152,6 +153,28 @@ FROM booru.tags t
          LEFT JOIN
      booru.artists_urls au ON a.id = au.artist_id
 GROUP BY t.id, a.id;
+
+CREATE VIEW booru.posts_tag_view AS
+SELECT p.id,
+       p.created_at,
+       p.score,
+       p.rating,
+       array_agg(DISTINCT t.name)
+       FILTER (WHERE t.category = 0) AS general,
+       array_agg(DISTINCT t.name)
+       FILTER (WHERE t.category = 1) AS artist,
+       array_agg(DISTINCT t.name)
+       FILTER (WHERE t.category = 3) AS copyright,
+       array_agg(DISTINCT t.name)
+       FILTER (WHERE t.category = 4) AS character,
+       array_agg(DISTINCT t.name)
+       FILTER (WHERE t.category = 5) AS meta
+FROM booru.posts p
+         JOIN
+     booru.posts_tags_assoc pta ON p.id = pta.post_id
+         JOIN
+     booru.tags t ON pta.tag_id = t.id
+GROUP BY p.id, p.created_at, p.score, p.rating;
 
 -- indexes to improve the performance of queries involving those columns
 CREATE INDEX idx_tags_ids ON booru.tags (id);
