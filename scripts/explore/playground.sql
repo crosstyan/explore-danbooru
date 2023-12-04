@@ -7,7 +7,7 @@ FROM booru.artists
          INNER JOIN booru.artist_tags_assoc ata on artists.id = ata.artist_id
          INNER JOIN booru.tags t on ata.tag_id = t.id
          INNER JOIN booru.tag_post_counts tpc on t.id = tpc.tag_id
-WHERE tpc.post_count > 200
+WHERE tpc.post_count > 100
 GROUP BY t.id, artist_id, t.name, post_count
 ORDER BY post_count DESC;
 
