@@ -42,8 +42,7 @@ CREATE TABLE booru.posts_media_variants
 
 CREATE TABLE booru.posts_file_urls
 (
-    id               SERIAL PRIMARY KEY,
-    post_id          INT NOT NULL REFERENCES booru.posts (id),
+    post_id          INT PRIMARY KEY REFERENCES booru.posts (id),
     file_url         TEXT,
     large_file_url   TEXT,
     preview_file_url TEXT
