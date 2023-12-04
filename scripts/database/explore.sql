@@ -42,3 +42,30 @@ FROM booru.posts p
          JOIN
      booru.tags t ON pta.tag_id = t.id
 GROUP BY p.id, p.created_at, p.score, p.rating, p.fav_count;
+
+CREATE OR REPLACE VIEW booru.view_post_aspect_ratio AS
+SELECT p.id,
+       p.width,
+       p.height,
+       p.width::float / p.height::float AS aspect_ratio,
+       CASE
+           WHEN width::float / height::float <= (9.0 / 21) THEN '(0, 9/21]'
+           WHEN width::float / height::float > (9.0 / 21) AND width::float / height::float <= (9.0 / 16)
+               THEN '(9/21, 9/16]'
+           WHEN width::float / height::float > (9.0 / 16) AND width::float / height::float <= (3.0 / 4)
+               THEN '(9/16, 3/4]'
+           WHEN width::float / height::float > (3.0 / 4) AND width::float / height::float < 1.0 THEN '(3/4, 1)'
+           WHEN width::float / height::float = 1.0 THEN '1'
+           WHEN width::float / height::float > 1.0 AND width::float / height::float <= (4.0 / 3) THEN '(1, 4/3]'
+           WHEN width::float / height::float > (4.0 / 3) AND width::float / height::float <= (16.0 / 9)
+               THEN '(4/3, 16/9]'
+           WHEN width::float / height::float > (16.0 / 9) AND width::float / height::float <= (21.0 / 9)
+               THEN '(16/9, 21/9]'
+           ELSE '(21/9, inf)'
+           END                          AS aspect_ratio_bucket
+FROM booru.posts p;
+
+-- SELECT aspect_ratio_bucket, count(*)
+-- FROM booru.view_post_aspect_ratio
+-- GROUP BY aspect_ratio_bucket;
+
