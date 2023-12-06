@@ -65,7 +65,7 @@ SELECT p.id,
            END                          AS aspect_ratio_bucket
 FROM booru.posts p;
 
--- SELECT aspect_ratio_bucket, count(*)
--- FROM booru.view_post_aspect_ratio
--- GROUP BY aspect_ratio_bucket;
+SELECT aspect_ratio_bucket, count(*)
+FROM booru.view_post_aspect_ratio
+GROUP BY aspect_ratio_bucket;
 
