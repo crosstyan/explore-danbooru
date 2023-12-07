@@ -105,87 +105,89 @@ WHERE pc.post_count > 100
 GROUP BY t.id, artist_id, t.name, post_count;
 
 
-CREATE OR REPLACE VIEW booru.view_modern_pussy_like_posts AS
-SELECT distinct p.post_id AS post_id,
-                p.created_at,
-                p.score,
-                p.fav_count,
-                p.tag_ids
-FROM booru.view_modern_posts_illustration_only p
-         INNER JOIN booru.posts_tags_assoc pta on p.post_id = pta.post_id
-         INNER JOIN booru.tags t on pta.tag_id = t.id
-WHERE t.name LIKE '%pussy%'
-   OR t.name = 'cameltoe'
-    AND t.category = 0;
+-- best artists for uncensored pussy
+WITH target_posts AS (SELECT distinct p.post_id AS post_id,
+                                      p.created_at,
+                                      p.score,
+                                      p.fav_count,
+                                      p.tag_ids
+                      FROM booru.view_modern_posts_illustration_only p
+                               INNER JOIN booru.posts_tags_assoc pta on p.post_id = pta.post_id
+                               INNER JOIN booru.tags t on pta.tag_id = t.id
+                      WHERE (p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name = 'uncensored'))
+                        AND ((p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name LIKE '%pussy%' AND category = 0))
+                          OR (p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name = 'cameltoe')))),
+     target_filtered_posts AS (SELECT distinct p.post_id,
+                                               p.created_at,
+                                               p.score,
+                                               p.fav_count,
+                                               p.tag_ids,
+                                               artists_n.artist_id,
+                                               artists_n.tag_id,
+                                               artists_n.tag_name
+                               FROM booru.view_artist_illustration_only_100 artists_n
+                                        INNER JOIN booru.posts_tags_assoc pta on artists_n.tag_id = pta.tag_id
+                                        INNER JOIN target_posts p on pta.post_id = p.post_id),
+     agg_artists AS (SELECT distinct pf.artist_id,
+                                     pf.tag_id,
+                                     pf.tag_name,
+                                     pc.post_count  as total_post_count,
+                                     count(*)       as target_post_count,
+                                     avg(score)     as avg_score,
+                                     avg(fav_count) as avg_fav_count
+                     FROM target_filtered_posts pf
+                              INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
+                     GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count),
 
-CREATE OR REPLACE VIEW booru.view_modern_pantyhose_like_posts AS
-SELECT distinct p.post_id AS post_id,
-                p.created_at,
-                p.score,
-                p.fav_count,
-                p.tag_ids
-FROM booru.view_modern_posts_illustration_only p
-         INNER JOIN booru.posts_tags_assoc pta on p.post_id = pta.post_id
-         INNER JOIN booru.tags t on pta.tag_id = t.id
-WHERE t.name LIKE '%pantyhose%'
-  AND t.category = 0;
-
-CREATE OR REPLACE VIEW booru.view_modern_pantyhose_like_posts_filtered AS
-SELECT distinct p.post_id,
-                p.created_at,
-                p.score,
-                p.fav_count,
-                p.tag_ids,
-                artists_n.artist_id,
-                artists_n.tag_id,
-                artists_n.tag_name
-FROM booru.view_artist_illustration_only_100 artists_n
-         INNER JOIN booru.posts_tags_assoc pta on artists_n.tag_id = pta.tag_id
-         INNER JOIN booru.view_modern_pantyhose_like_posts p on pta.post_id = p.post_id;
-
-CREATE OR REPLACE VIEW booru.view_modern_pussy_like_posts_filtered AS
-SELECT distinct p.post_id,
-                p.created_at,
-                p.score,
-                p.fav_count,
-                p.tag_ids,
-                artists_n.artist_id,
-                artists_n.tag_id,
-                artists_n.tag_name
-FROM booru.view_artist_illustration_only_100 artists_n
-         INNER JOIN booru.posts_tags_assoc pta on artists_n.tag_id = pta.tag_id
-         INNER JOIN booru.view_modern_pussy_like_posts p on pta.post_id = p.post_id;
-
--- best artists for pussy
-WITH agg_pussy_like_artists AS (SELECT distinct pf.artist_id,
-                                                pf.tag_id,
-                                                pf.tag_name,
-                                                pc.post_count  as total_post_count,
-                                                count(*)       as target_post_count,
-                                                avg(score)     as avg_score,
-                                                avg(fav_count) as avg_fav_count
-                                FROM booru.view_modern_pussy_like_posts_filtered pf
-                                         INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
-                                GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count
-                                ORDER BY avg(score) DESC
-                                LIMIT 500)
+     ratioed AS (SELECT *, total_post_count::float / total_post_count::float as ratio
+                 FROM agg_artists),
+     limited AS (SELECT *
+                 FROM ratioed
+                 WHERE ratio > 0.1
+                 ORDER BY ratio DESC
+                 LIMIT 500)
 SELECT *
-FROM agg_pussy_like_artists;
+FROM limited;
+
 
 -- best artists for pantyhose
-WITH agg_pantyhose_like_artists AS (SELECT distinct pf.artist_id,
-                                                    pf.tag_id,
-                                                    pf.tag_name,
-                                                    pc.post_count  as total_post_count,
-                                                    count(*)       as target_post_count,
-                                                    avg(score)     as avg_score,
-                                                    avg(fav_count) as avg_fav_count
-                                    FROM booru.view_modern_pantyhose_like_posts_filtered pf
-                                             INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
-                                    GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count
-                                    ORDER BY avg(score) DESC
-                                    LIMIT 500)
+WITH target_posts AS (SELECT distinct p.post_id AS post_id,
+                                      p.created_at,
+                                      p.score,
+                                      p.fav_count,
+                                      p.tag_ids
+                      FROM booru.view_modern_posts_illustration_only p
+                               INNER JOIN booru.posts_tags_assoc pta on p.post_id = pta.post_id
+                               INNER JOIN booru.tags t on pta.tag_id = t.id
+                      WHERE (p.tag_ids &&
+                             ARRAY(SELECT id FROM booru.tags WHERE name LIKE '%pantyhose%' AND category = 0))),
+     target_filtered_posts AS (SELECT distinct p.post_id,
+                                               p.created_at,
+                                               p.score,
+                                               p.fav_count,
+                                               p.tag_ids,
+                                               artists_n.artist_id,
+                                               artists_n.tag_id,
+                                               artists_n.tag_name
+                               FROM booru.view_artist_illustration_only_100 artists_n
+                                        INNER JOIN booru.posts_tags_assoc pta on artists_n.tag_id = pta.tag_id
+                                        INNER JOIN target_posts p on pta.post_id = p.post_id),
+     agg_artists AS (SELECT distinct pf.artist_id,
+                                     pf.tag_id,
+                                     pf.tag_name,
+                                     pc.post_count  as total_post_count,
+                                     count(*)       as target_post_count,
+                                     avg(score)     as avg_score,
+                                     avg(fav_count) as avg_fav_count
+                     FROM target_filtered_posts pf
+                              INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
+                     GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count),
+     ratioed AS (SELECT *, total_post_count::float / total_post_count::float as ratio
+                 FROM agg_artists),
+     limited AS (SELECT *
+                 FROM ratioed
+                 WHERE ratio > 0.1
+                 ORDER BY ratio DESC
+                 LIMIT 500)
 SELECT *
-FROM agg_pantyhose_like_artists;
-
--- TODO: build a pipeline to generate the views like above
+FROM limited;
