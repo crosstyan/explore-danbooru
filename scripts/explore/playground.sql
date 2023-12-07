@@ -131,15 +131,14 @@ WITH target_posts AS (SELECT distinct p.post_id AS post_id,
      agg_artists AS (SELECT distinct pf.artist_id,
                                      pf.tag_id,
                                      pf.tag_name,
-                                     pc.post_count  as total_post_count,
                                      count(*)       as target_post_count,
+                                     pc.post_count  as total_post_count,
                                      avg(score)     as avg_score,
                                      avg(fav_count) as avg_fav_count
                      FROM target_filtered_posts pf
                               INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
                      GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count),
-
-     ratioed AS (SELECT *, total_post_count::float / total_post_count::float as ratio
+     ratioed AS (SELECT *, target_post_count::float / total_post_count::float as ratio
                  FROM agg_artists),
      limited AS (SELECT *
                  FROM ratioed
@@ -175,14 +174,14 @@ WITH target_posts AS (SELECT distinct p.post_id AS post_id,
      agg_artists AS (SELECT distinct pf.artist_id,
                                      pf.tag_id,
                                      pf.tag_name,
-                                     pc.post_count  as total_post_count,
                                      count(*)       as target_post_count,
+                                     pc.post_count  as total_post_count,
                                      avg(score)     as avg_score,
                                      avg(fav_count) as avg_fav_count
                      FROM target_filtered_posts pf
                               INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
                      GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count),
-     ratioed AS (SELECT *, total_post_count::float / total_post_count::float as ratio
+     ratioed AS (SELECT *, target_post_count::float / total_post_count::float as ratio
                  FROM agg_artists),
      limited AS (SELECT *
                  FROM ratioed
