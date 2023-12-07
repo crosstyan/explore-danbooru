@@ -112,8 +112,6 @@ WITH target_posts AS (SELECT distinct p.post_id AS post_id,
                                       p.fav_count,
                                       p.tag_ids
                       FROM booru.view_modern_posts_illustration_only p
-                               INNER JOIN booru.posts_tags_assoc pta on p.post_id = pta.post_id
-                               INNER JOIN booru.tags t on pta.tag_id = t.id
                       WHERE (p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name = 'uncensored'))
                         AND ((p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name LIKE '%pussy%' AND category = 0))
                           OR (p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name = 'cameltoe')))),
@@ -156,8 +154,6 @@ WITH target_posts AS (SELECT distinct p.post_id AS post_id,
                                       p.fav_count,
                                       p.tag_ids
                       FROM booru.view_modern_posts_illustration_only p
-                               INNER JOIN booru.posts_tags_assoc pta on p.post_id = pta.post_id
-                               INNER JOIN booru.tags t on pta.tag_id = t.id
                       WHERE (p.tag_ids &&
                              ARRAY(SELECT id FROM booru.tags WHERE name LIKE '%pantyhose%' AND category = 0))),
      target_filtered_posts AS (SELECT distinct p.post_id,
