@@ -104,6 +104,45 @@ FROM booru.artists
 WHERE pc.post_count > 100
 GROUP BY t.id, artist_id, t.name, post_count;
 
+-- best artists for pussy
+WITH target_posts AS (SELECT distinct p.post_id AS post_id,
+                                      p.created_at,
+                                      p.score,
+                                      p.fav_count,
+                                      p.tag_ids
+                      FROM booru.view_modern_posts_illustration_only p
+                      WHERE ((p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name LIKE '%pussy%' AND category = 0))
+                          OR (p.tag_ids && ARRAY(SELECT id FROM booru.tags WHERE name = 'cameltoe')))),
+     target_filtered_posts AS (SELECT distinct p.post_id,
+                                               p.created_at,
+                                               p.score,
+                                               p.fav_count,
+                                               p.tag_ids,
+                                               artists_n.artist_id,
+                                               artists_n.tag_id,
+                                               artists_n.tag_name
+                               FROM booru.view_artist_illustration_only_100 artists_n
+                                        INNER JOIN booru.posts_tags_assoc pta on artists_n.tag_id = pta.tag_id
+                                        INNER JOIN target_posts p on pta.post_id = p.post_id),
+     agg_artists AS (SELECT distinct pf.artist_id,
+                                     pf.tag_id,
+                                     pf.tag_name,
+                                     avg(score)     as avg_score,
+                                     avg(fav_count) as avg_fav_count,
+                                     count(*)       as target_post_count,
+                                     pc.post_count  as total_post_count
+                     FROM target_filtered_posts pf
+                              INNER JOIN booru.view_posts_count_illustration_only pc on pf.tag_id = pc.tag_id
+                     GROUP BY pf.artist_id, pf.tag_id, pf.tag_name, pc.post_count),
+     ratioed AS (SELECT *, target_post_count::float / total_post_count::float as target_ratio
+                 FROM agg_artists),
+     limited AS (SELECT *
+                 FROM ratioed
+                 WHERE target_ratio > 0.1
+                 ORDER BY avg_score DESC
+                 LIMIT 500)
+SELECT *
+FROM limited;
 
 -- best artists for uncensored pussy
 WITH target_posts AS (SELECT distinct p.post_id AS post_id,
