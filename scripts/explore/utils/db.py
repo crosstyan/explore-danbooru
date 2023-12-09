@@ -48,12 +48,12 @@ def postgres_env_password() -> Optional[str]:
     return os.environ.get("PGPASSWORD")
 
 
-def get_df_by_sql(conn_info: str, sql: str) -> pl.DataFrame:
+async def get_df_by_sql(conn_info: str, sql: str) -> pl.DataFrame:
     """Get dataframe by SQL"""
-    with psycopg.connect(conninfo=conn_info) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)    # type: ignore
-            rows = cur.fetchall()
+    async with await psycopg.AsyncConnection.connect(conninfo=conn_info) as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(sql)    # type: ignore
+            rows = await cur.fetchall()
             assert cur.description is not None
             column_names = [desc[0] for desc in cur.description]
             return pl.DataFrame(rows, schema=column_names)
