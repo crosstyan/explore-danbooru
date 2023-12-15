@@ -1,0 +1,90 @@
+Limit  (cost=27594.34..37611.53 rows=50 width=287) (actual time=375.089..3189.011 rows=50 loops=1)
+  Buffers: shared hit=130431 read=211664
+  CTE artist
+    ->  Limit  (cost=27594.32..27594.32 rows=1 width=34) (actual time=192.222..192.754 rows=1 loops=1)
+          Buffers: shared hit=100006 read=5158
+          ->  Sort  (cost=27594.32..27630.68 rows=14546 width=34) (actual time=192.221..192.752 rows=1 loops=1)
+                Sort Key: (random())
+                Sort Method: top-N heapsort  Memory: 25kB
+                Buffers: shared hit=100006 read=5158
+                ->  Subquery Scan on artists_with_n_posts  (cost=27339.76..27521.59 rows=14546 width=34) (actual time=187.084..190.937 rows=14001 loops=1)
+                      Buffers: shared hit=100006 read=5158
+                      ->  Finalize HashAggregate  (cost=27339.76..27485.22 rows=14546 width=26) (actual time=187.082..189.668 rows=14001 loops=1)
+"                            Group Key: t.id, ata.artist_id, tpc.post_count"
+                            Batches: 1  Memory Usage: 1809kB
+                            Buffers: shared hit=100006 read=5158
+                            ->  Gather  (cost=26334.43..27275.59 rows=8556 width=26) (actual time=180.247..183.778 rows=14001 loops=1)
+                                  Workers Planned: 1
+                                  Workers Launched: 1
+                                  Buffers: shared hit=100006 read=5158
+                                  ->  Partial HashAggregate  (cost=25334.43..25419.99 rows=8556 width=26) (actual time=150.845..152.004 rows=7000 loops=2)
+"                                        Group Key: t.id, ata.artist_id, tpc.post_count"
+                                        Batches: 1  Memory Usage: 1169kB
+                                        Buffers: shared hit=100006 read=5158
+                                        Worker 0:  Batches: 1  Memory Usage: 913kB
+                                        ->  Nested Loop  (cost=11959.48..25270.26 rows=8556 width=26) (actual time=64.294..147.725 rows=7000 loops=2)
+                                              Buffers: shared hit=100006 read=5158
+                                              ->  Nested Loop  (cost=11959.06..21360.53 rows=8556 width=26) (actual time=63.943..132.354 rows=7000 loops=2)
+                                                    Buffers: shared hit=57930 read=5158
+                                                    ->  Parallel Hash Join  (cost=11958.63..16465.40 rows=8566 width=16) (actual time=63.916..107.490 rows=7000 loops=2)
+                                                          Hash Cond: (ata.tag_id = tpc.tag_id)
+                                                          Buffers: shared hit=1925 read=5158
+                                                          ->  Parallel Seq Scan on artist_tags_assoc ata  (cost=0.00..3919.65 rows=223665 width=8) (actual time=0.004..10.155 rows=190116 loops=2)
+                                                                Buffers: shared hit=1683
+                                                          ->  Parallel Hash  (cost=11716.04..11716.04 rows=19407 width=8) (actual time=63.645..63.645 rows=23364 loops=2)
+                                                                Buckets: 65536  Batches: 1  Memory Usage: 2368kB
+                                                                Buffers: shared hit=224 read=5158
+                                                                ->  Parallel Seq Scan on tag_post_counts tpc  (cost=0.00..11716.04 rows=19407 width=8) (actual time=0.458..57.493 rows=23364 loops=2)
+                                                                      Filter: (post_count > 100)
+                                                                      Rows Removed by Filter: 584704
+                                                                      Buffers: shared hit=224 read=5158
+                                                    ->  Index Scan using idx_tags_ids on tags t  (cost=0.43..0.57 rows=1 width=18) (actual time=0.003..0.003 rows=1 loops=14001)
+                                                          Index Cond: (id = ata.tag_id)
+                                                          Buffers: shared hit=56005
+                                              ->  Index Only Scan using artists_pkey on artists  (cost=0.42..0.46 rows=1 width=4) (actual time=0.002..0.002 rows=1 loops=14001)
+                                                    Index Cond: (id = ata.artist_id)
+                                                    Heap Fetches: 70
+                                                    Buffers: shared hit=42076
+  InitPlan 6 (returns $8)
+    ->  CTE Scan on artist  (cost=0.00..0.02 rows=1 width=4) (actual time=192.224..192.225 rows=1 loops=1)
+          Buffers: shared hit=100006 read=5158
+  ->  Seq Scan on view_modern_posts_illustration_only_extra ap  (cost=0.00..9297752.75 rows=46409 width=287) (actual time=375.088..3188.451 rows=50 loops=1)
+        Filter: (tag_ids && $8)
+        Rows Removed by Filter: 4079467
+        Buffers: shared hit=130431 read=211664
+        SubPlan 2
+          ->  Aggregate  (cost=48.49..48.50 rows=1 width=32) (actual time=0.267..0.267 rows=1 loops=50)
+                Buffers: shared hit=6981 read=40
+                ->  Index Scan using idx_tags_ids on tags  (cost=0.43..48.48 rows=4 width=14) (actual time=0.093..0.251 rows=1 loops=50)
+                      Index Cond: (id = ANY (ap.tag_ids))
+                      Filter: (category = 1)
+                      Rows Removed by Filter: 35
+                      Buffers: shared hit=6981 read=40
+        SubPlan 3
+          ->  Aggregate  (cost=48.49..48.50 rows=1 width=32) (actual time=0.079..0.079 rows=1 loops=50)
+                Buffers: shared hit=7021
+                ->  Index Scan using idx_tags_ids on tags tags_1  (cost=0.43..48.48 rows=4 width=14) (actual time=0.005..0.066 rows=31 loops=50)
+                      Index Cond: (id = ANY (ap.tag_ids))
+                      Filter: (category = 0)
+                      Rows Removed by Filter: 5
+                      Buffers: shared hit=7021
+        SubPlan 4
+          ->  Aggregate  (cost=48.48..48.49 rows=1 width=32) (actual time=0.060..0.061 rows=1 loops=50)
+                Buffers: shared hit=7021
+                ->  Index Scan using idx_tags_ids on tags tags_2  (cost=0.43..48.48 rows=1 width=14) (actual time=0.032..0.054 rows=1 loops=50)
+                      Index Cond: (id = ANY (ap.tag_ids))
+                      Filter: (category = 3)
+                      Rows Removed by Filter: 35
+                      Buffers: shared hit=7021
+        SubPlan 5
+          ->  Aggregate  (cost=48.48..48.49 rows=1 width=32) (actual time=0.052..0.052 rows=1 loops=50)
+                Buffers: shared hit=7021
+                ->  Index Scan using idx_tags_ids on tags tags_3  (cost=0.43..48.48 rows=2 width=14) (actual time=0.046..0.047 rows=1 loops=50)
+                      Index Cond: (id = ANY (ap.tag_ids))
+                      Filter: (category = 4)
+                      Rows Removed by Filter: 35
+                      Buffers: shared hit=7021
+Planning:
+  Buffers: shared hit=51
+Planning Time: 1.160 ms
+Execution Time: 3190.019 ms

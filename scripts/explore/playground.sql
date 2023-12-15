@@ -8,8 +8,7 @@ FROM booru.artists
          INNER JOIN booru.tags t on ata.tag_id = t.id
          INNER JOIN booru.tag_post_counts tpc on t.id = tpc.tag_id
 WHERE tpc.post_count > 100
-GROUP BY t.id, artist_id, t.name, post_count
-ORDER BY post_count DESC;
+GROUP BY t.id, artist_id, t.name, post_count;
 
 -- SELECT count(*)
 -- FROM booru.artists_with_n_posts;
@@ -58,6 +57,24 @@ SELECT distinct p.id      as post_id,
                 p.tag_ids as tag_ids
 FROM booru.view_modern_posts vmp
          INNER JOIN booru.view_posts_illustration_only p on p.id = vmp.id;
+
+CREATE MATERIALIZED VIEW booru.view_modern_posts_illustration_only_extra AS
+SELECT p.id as post_id,
+       p.created_at,
+       p.score,
+       p.fav_count,
+       p.pixiv_id,
+       vmpi.tag_ids,
+       vpar.width,
+       vpar.height,
+       vpar.aspect_ratio,
+       vpar.aspect_ratio_bucket,
+       pfu.file_url,
+       pfu.preview_file_url
+FROM booru.view_modern_posts_illustration_only vmpi
+         INNER JOIN booru.posts p on p.id = vmpi.post_id
+         INNER JOIN booru.view_post_aspect_ratio vpar on p.id = vpar.id
+         INNER JOIN booru.posts_file_urls pfu on p.id = pfu.post_id;
 
 CREATE MATERIALIZED VIEW booru.view_posts_count_illustration_only AS
 SELECT t.id               AS tag_id,
@@ -328,3 +345,42 @@ WITH target_posts AS (SELECT distinct p.post_id AS post_id,
                  LIMIT 2000)
 SELECT *
 FROM limited;
+
+-- https://www.pgexplain.dev/
+EXPLAIN (ANALYZE, BUFFERS, COSTS, TIMING, SUMMARY)
+WITH artist AS (SELECT *
+                FROM booru.artists_with_n_posts
+                ORDER BY random()
+                LIMIT 1),
+     artist_posts_with_tags_id AS (SELECT ap.post_id,
+                                          ap.tag_ids,
+                                          ap.created_at,
+                                          ap.file_url,
+                                          ap.preview_file_url
+                                   FROM booru.view_modern_posts_illustration_only_extra ap
+                                   WHERE ap.tag_ids && ARRAY(SELECT tag_id FROM artist)),
+     -- translate tag id to tag name
+     artist_posts_with_tags AS (SELECT ap.post_id,
+                                       (SELECT array_agg(name)
+                                        FROM booru.tags
+                                        WHERE id = ANY (tag_ids)
+                                          AND category = 1) as artist_tags,
+                                       (SELECT array_agg(name)
+                                        FROM booru.tags
+                                        WHERE id = ANY (tag_ids)
+                                          AND category = 0) as general_tags,
+                                       (SELECT array_agg(name)
+                                        FROM booru.tags
+                                        WHERE id = ANY (tag_ids)
+                                          AND category = 3) as copyright_tags,
+                                       (SELECT array_agg(name)
+                                        FROM booru.tags
+                                        WHERE id = ANY (tag_ids)
+                                          AND category = 4) as characters_tags,
+                                       ap.created_at,
+                                       ap.file_url,
+                                       ap.preview_file_url
+                                FROM artist_posts_with_tags_id as ap)
+SELECT *
+FROM artist_posts_with_tags
+LIMIT 50;

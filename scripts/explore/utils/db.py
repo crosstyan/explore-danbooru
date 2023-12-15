@@ -5,6 +5,7 @@ from psycopg.sql import SQL
 from typing import Dict, Optional, Generator, List, TypedDict, TypeVar, Iterable, Callable, Any, Sequence
 from pydantic import BaseModel
 from pathlib import Path
+import pyarrow as pa
 import polars as pl
 import plotly.express as px
 import plotly.graph_objects as go
