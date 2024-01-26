@@ -353,18 +353,23 @@ WITH artist AS (SELECT *
                 ORDER BY random()
                 LIMIT 1),
      artist_posts_with_tags_id AS (SELECT ap.post_id,
+                                          ap.score,
+                                          ap.fav_count,
                                           ap.tag_ids,
                                           ap.created_at,
                                           ap.file_url,
                                           ap.preview_file_url
                                    FROM booru.view_modern_posts_illustration_only_extra ap
                                    WHERE ap.tag_ids && ARRAY(SELECT tag_id FROM artist)),
+
      -- translate tag id to tag name
      artist_posts_with_tags AS (SELECT ap.post_id,
                                        (SELECT array_agg(name)
                                         FROM booru.tags
                                         WHERE id = ANY (tag_ids)
                                           AND category = 1) as artist_tags,
+                                       ap.score,
+                                       ap.fav_count,
                                        (SELECT array_agg(name)
                                         FROM booru.tags
                                         WHERE id = ANY (tag_ids)
@@ -384,3 +389,39 @@ WITH artist AS (SELECT *
 SELECT *
 FROM artist_posts_with_tags
 LIMIT 50;
+
+-- do the stats for all artists
+CREATE MATERIALIZED VIEW booru.artists_stats AS
+WITH spreaded AS (SELECT unnest(tag_ids) as tag_id, * FROM booru.view_modern_posts_illustration_only_extra)
+SELECT a.tag_id,
+       a.tag_name        as artist_name,
+       min(p.created_at) as earliest_post_date,
+       max(p.created_at) as latest_post_date,
+       avg(p.score)      as avg_score,
+       avg(p.fav_count)  as avg_fav_count,
+       count(*)          as post_count
+FROM spreaded as p
+         LEFT JOIN booru.artists_with_n_posts as a ON p.tag_id = a.tag_id
+GROUP BY a.tag_name, a.tag_id;
+
+
+WITH char_tags AS (SELECT *
+                   FROM booru.tags
+                            INNER JOIN booru.tag_post_counts tpc on tags.id = tpc.tag_id
+                   WHERE category = 4
+                     AND tpc.post_count > 50),
+     with_char_tags_posts AS (SELECT post_id, tag_ids, score, fav_count, tag_ids, ct.name as char_tag
+                              FROM booru.view_modern_posts_illustration_only_extra p
+                                       CROSS JOIN LATERAL UNNEST(p.tag_ids) AS unnested_tag_id
+                                       INNER JOIN char_tags ct ON ct.id = unnested_tag_id
+                              group by post_id, tag_ids, score, fav_count, ct.name),
+     char_table AS (SELECT char_tag, count(*) as count, avg(score) as avg_score, avg(fav_count) as avg_fav_count
+                    FROM with_char_tags_posts
+                    GROUP BY char_tag)
+SELECT *
+FROM char_table as ct
+WHERE ct.count > 50
+ORDER BY ct.count DESC;
+
+select count(*)
+from booru.artists_with_n_posts;
